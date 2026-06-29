@@ -1,0 +1,21 @@
+# CloudOS — Development Dockerfile
+# Uses air for hot-reload: https://github.com/air-verse/air
+
+FROM golang:1.24-alpine AS builder
+
+RUN apk add --no-cache git curl
+
+# Install air for hot-reload
+RUN go install github.com/air-verse/air@latest
+
+WORKDIR /app
+
+# Copy go module files first for caching
+COPY core/cloudos/go.mod core/cloudos/go.sum ./
+RUN go mod download
+
+# Copy source
+COPY core/cloudos/ .
+
+# Default command: air with hot-reload
+CMD ["air"]

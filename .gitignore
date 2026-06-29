@@ -1,0 +1,47 @@
+# CloudOS — .gitignore
+
+## Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.test.exe
+bin/
+vendor/
+
+## Node / TypeScript (apps/dashboard, apps/desktop)
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+.eslintcache
+.cache/
+
+## IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+## Environment
+.env
+.env.local
+.env.production
+*.env.local
+
+## Build artifacts
+*.tar.gz
+*.zip
+coverage.out
+coverage.html
+*.log
+
+## Docker
+.docker/
+docker-compose.override.yml

@@ -1,0 +1,21 @@
+# CloudOS — Air hot-reload configuration
+root = "."
+testdata_dir = "testdata"
+
+[build]
+  cmd = "go build -o ./bin/cloudos ./tools/cloudos"
+  bin = "./bin/cloudos"
+  delay = 1000
+  exclude_dir = ["assets", "docs", "node_modules", "bin", "vendor", "apps"]
+  exclude_regex = ["_test\\.go$"]
+  exclude_unchanged = true
+  include_dir = ["kernel", "capabilities", "providers", "packages", "tools"]
+  include_ext = ["go", "yaml", "yml", "env"]
+
+[log]
+  main_only = false
+  time = false
+
+[screen]
+  clear_on_rebuild = false
+  keep_scroll = true

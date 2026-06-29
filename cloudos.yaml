@@ -1,0 +1,20 @@
+# CloudOS — Default configuration
+# Environment variables are interpolated with ${VAR:-default} syntax.
+
+kernel:
+  log_level: ${CLOUDOS_LOG_LEVEL:-info}
+  data_dir: ${CLOUDOS_DATA_DIR:-/var/lib/cloudos}
+  plugin_dir: ${CLOUDOS_PLUGIN_DIR:-/var/lib/cloudos/plugins}
+
+api:
+  host: ${CLOUDOS_HOST:-0.0.0.0}
+  port: ${CLOUDOS_PORT:-8080}
+
+auth:
+  jwt_secret: ${CLOUDOS_JWT_SECRET:-change-me-in-production}
+  token_ttl: ${CLOUDOS_TOKEN_TTL:-24h}
+
+logging:
+  level: ${CLOUDOS_LOG_LEVEL:-info}
+  format: ${CLOUDOS_LOG_FORMAT:-json}
+  output: ${CLOUDOS_LOG_OUTPUT:-stdout}

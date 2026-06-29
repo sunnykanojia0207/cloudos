@@ -1,0 +1,56 @@
+# CloudOS — Taskfile (alternative to Makefile for cross-platform)
+# Install: https://taskfile.dev/
+version: "3"
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmd: task --list
+
+  build:
+    desc: Build all Go packages
+    cmds:
+      - go build ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+      - go mod tidy
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
+
+  test-race:
+    desc: Run tests with race detector
+    cmds:
+      - go test -race ./...
+
+  test-coverage:
+    desc: Run tests with coverage report
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+
+  tidy:
+    desc: Tidy Go module dependencies
+    cmds:
+      - go mod tidy
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - go clean ./...
+      - rm -f coverage.out coverage.html
+
+  dev:
+    desc: Run CloudOS kernel in development mode
+    cmds:
+      - go run ./tools/cloudos

@@ -1,0 +1,36 @@
+# CloudOS — Lefthook pre-commit hooks
+# Install: https://github.com/evilmartians/lefthook
+
+pre-commit:
+  parallel: true
+  commands:
+    go-fmt:
+      glob: "*.go"
+      run: gofmt -l {staged_files}
+      stage_fixed: true
+    go-imports:
+      glob: "*.go"
+      run: goimports -l -local github.com/cloudos {staged_files}
+      stage_fixed: true
+    go-vet:
+      glob: "*.go"
+      run: go vet ./...
+    lint:
+      glob: "*.go"
+      run: golangci-lint run ./...
+    whitespace:
+      glob: "*.{go,yml,yaml,json,md}"
+      run: git diff --check --cached
+    go-test:
+      glob: "*.go"
+      run: go test ./...
+
+commit-msg:
+  commands:
+    lint-commit:
+      run: |
+        if ! echo "$1" | grep -qE '^(feat|fix|docs|style|refactor|test|chore|ci|perf|build|revert)(\(.+\))?: .{1,72}'; then
+          echo "Commit message must follow: type(scope): description"
+          echo "Types: feat, fix, docs, style, refactor, test, chore, ci, perf, build, revert"
+          exit 1
+        fi
