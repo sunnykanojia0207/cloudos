@@ -16,14 +16,18 @@ import (
 	"github.com/cloudos/cloudos/capabilities"
 	"github.com/cloudos/cloudos/kernel/di"
 	"github.com/cloudos/cloudos/providers"
+	"github.com/cloudos/cloudos/kernel/application"
 	"github.com/cloudos/cloudos/kernel/controller"
 	"github.com/cloudos/cloudos/kernel/events"
 	"github.com/cloudos/cloudos/kernel/health"
 	"github.com/cloudos/cloudos/kernel/lifecycle"
 	"github.com/cloudos/cloudos/kernel/project"
+	"github.com/cloudos/cloudos/kernel/runtime/local"
+	"github.com/cloudos/cloudos/kernel/source"
 	"github.com/cloudos/cloudos/kernel/registry"
 	"github.com/cloudos/cloudos/kernel/resource"
 	"github.com/cloudos/cloudos/kernel/scheduler"
+	"github.com/cloudos/cloudos/kernel/workflow"
 	"github.com/cloudos/cloudos/kernel/security"
 	"github.com/cloudos/cloudos/packages/config"
 	"github.com/cloudos/cloudos/packages/logging"
@@ -194,6 +198,26 @@ func (k *Kernel) Boot(ctx context.Context) error {
 			}
 			k.log.Info("project resource kind registered")
 
+			// Register the "WorkflowExecution" resource kind.
+			if err := k.resRegistry.RegisterKind(resource.Kind{
+				Name:       workflow.WorkflowExecutionKind,
+				Namespaced: true,
+				Versions:   []string{"v1"},
+			}); err != nil {
+				return fmt.Errorf("register resource kind %s: %w", workflow.WorkflowExecutionKind, err)
+			}
+			k.log.Info("workflow execution resource kind registered")
+
+			// Register the "Application" resource kind.
+			if err := k.resRegistry.RegisterKind(resource.Kind{
+				Name:       application.Kind,
+				Namespaced: true,
+				Versions:   []string{"v1"},
+			}); err != nil {
+				return fmt.Errorf("register resource kind %s: %w", application.Kind, err)
+			}
+			k.log.Info("application resource kind registered")
+
 			k.log.Info("resource engine initialised",
 				"namespace", ns.GetMetadata().ID,
 			)
@@ -218,6 +242,36 @@ func (k *Kernel) Boot(ctx context.Context) error {
 			k.log.Info("project controller registered",
 				"controller", projCtrl.Name(),
 				"kind", projCtrl.Kind(),
+			)
+
+			// Create the Source GitCloner and Local Runtime Manager
+			// for the deployment workflow pipeline.
+			sourceCloner := source.NewGitCloner(k.cfg.Kernel.DataDir)
+			runtimeMgr := local.NewManager(k.cfg.Kernel.DataDir, k.log)
+			k.log.Info("source cloner and runtime manager created",
+				"workDir", k.cfg.Kernel.DataDir,
+			)
+
+			// Create the Workflow Service (needed by ApplicationController).
+			workflowSvc := workflow.NewService(workflow.ServiceDeps{
+				ResourceRegistry:  k.resRegistry,
+				ControllerManager: k.ctrlManager,
+				HealthManager:     k.health,
+				EventBus:          k.events,
+				SourceCloner:      sourceCloner,
+				RuntimeManager:    runtimeMgr,
+				Logger:            k.log,
+			})
+			k.log.Info("workflow service created")
+
+			// Register the ApplicationController.
+			appCtrl := application.NewApplicationController(k.resRegistry, k.events, workflowSvc, k.log)
+			if err := k.ctrlManager.Register(appCtrl); err != nil {
+				return fmt.Errorf("register application controller: %w", err)
+			}
+			k.log.Info("application controller registered",
+				"controller", appCtrl.Name(),
+				"kind", appCtrl.Kind(),
 			)
 
 			// Start the controller runtime (starts all controllers).
