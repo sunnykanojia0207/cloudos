@@ -54,6 +54,10 @@ func NewServer(k *kernel.Kernel, addr string) *Server {
 	mux := http.NewServeMux()
 	registerRoutes(mux, handler, capHandler, provHandler, resHandler, ctrlHandler, projHandler, wfHandler, logHandler, deployHandler)
 
+	// Serve the dashboard SPA for all non-API routes.
+	dashHandler := NewDashboardHandler()
+	mux.Handle("GET /", dashHandler)
+
 	// Build the middleware chain: outer → inner is RequestID → Recovery → Logging → mux.
 	var h http.Handler = mux
 	h = LoggingMiddleware(log)(h)
