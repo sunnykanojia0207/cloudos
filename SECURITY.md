@@ -20,5 +20,5 @@ We will acknowledge receipt within 48 hours and aim to release a fix within 14 d
 ## Security Considerations
 
 - All secrets and credentials must use CloudOS's built-in secrets management
-- Follow our [security documentation](docs/SECURITY.md) for production deployments
-- Run `cloudos security audit` before production releases
+- Run the kernel on localhost only (no authentication in v0.6)
+- Review our [Architecture Decision Records](adr/) for security-related decisions

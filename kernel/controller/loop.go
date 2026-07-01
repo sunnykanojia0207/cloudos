@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/cloudos/cloudos/kernel/safe"
 )
 
 // ── Reconcile Loop ─────────────────────────────────────────────────────────
@@ -109,14 +111,14 @@ func (m *Manager) reconcileLoop(ctx context.Context, ctrl Controller) {
 					}
 				}
 
-				// Re-enqueue after delay.
-				go func(req ReconcileRequest, delay time.Duration) {
+				// Re-enqueue after delay (with panic recovery).
+				safe.Go(func() {
 					select {
-					case <-time.After(delay):
+					case <-time.After(requeueAfter):
 						m.enqueue(req)
 					case <-ctx.Done():
 					}
-				}(req, requeueAfter)
+				})
 			} else if result.Err == nil {
 				// Success, no requeue: clear retry state.
 				retryMu.Lock()

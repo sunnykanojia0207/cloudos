@@ -289,13 +289,44 @@ func TestStartCommandWithPort(t *testing.T) {
 
 // ── Detection Hierarchy ────────────────────────────────────────────────────
 
-func TestDetect_Hierarchy_DockerFirst(t *testing.T) {
-	// Dockerfile should take priority over everything else.
+func TestDetect_Hierarchy_GoBeforeNode(t *testing.T) {
+	// Go (go.mod) should be detected before Node (package.json).
 	dir := setupProject(t, map[string]string{
-		"Dockerfile":    "FROM node:18",
-		"package.json":  `{"name":"test"}`,
-		"go.mod":        "module test",
-		"index.html":    "<html></html>",
+		"go.mod":       "module test",
+		"package.json": `{"name":"test","scripts":{"start":"node index.js"}}`,
+	})
+
+	r, err := Detect(dir)
+	if err != nil {
+		t.Fatalf("Detect() returned error: %v", err)
+	}
+	if r.Type != RuntimeGo {
+		t.Errorf("Type = %q, want %q (go.mod should take priority over package.json)", r.Type, RuntimeGo)
+	}
+}
+
+func TestDetect_Hierarchy_DockerIsLastNonFallback(t *testing.T) {
+	// Dockerfile should be checked before Static fallback but after
+	// all other buildpacks. Since Go is higher priority, a project
+	// with both go.mod and Dockerfile will match Go first.
+	dir := setupProject(t, map[string]string{
+		"go.mod":      "module test",
+		"Dockerfile":  "FROM node:18",
+	})
+
+	r, err := Detect(dir)
+	if err != nil {
+		t.Fatalf("Detect() returned error: %v", err)
+	}
+	if r.Type != RuntimeGo {
+		t.Errorf("Type = %q, want %q (go.mod should take priority over Dockerfile)", r.Type, RuntimeGo)
+	}
+}
+
+func TestDetect_Hierarchy_DockerBeatsStatic(t *testing.T) {
+	// Dockerfile should be detected when nothing else matches.
+	dir := setupProject(t, map[string]string{
+		"Dockerfile":  "FROM node:18",
 	})
 
 	r, err := Detect(dir)
@@ -303,22 +334,6 @@ func TestDetect_Hierarchy_DockerFirst(t *testing.T) {
 		t.Fatalf("Detect() returned error: %v", err)
 	}
 	if r.Type != RuntimeDocker {
-		t.Errorf("Type = %q, want %q (Dockerfile should take priority)", r.Type, RuntimeDocker)
-	}
-}
-
-func TestDetect_Hierarchy_NodeBeforeGo(t *testing.T) {
-	// package.json should be detected before go.mod.
-	dir := setupProject(t, map[string]string{
-		"package.json": `{"name":"test","scripts":{"start":"node index.js"}}`,
-		"go.mod":       "module test",
-	})
-
-	r, err := Detect(dir)
-	if err != nil {
-		t.Fatalf("Detect() returned error: %v", err)
-	}
-	if r.Type != RuntimeNode {
-		t.Errorf("Type = %q, want %q (package.json should take priority over go.mod)", r.Type, RuntimeNode)
+		t.Errorf("Type = %q, want %q", r.Type, RuntimeDocker)
 	}
 }

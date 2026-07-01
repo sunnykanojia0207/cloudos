@@ -13,6 +13,36 @@ func NewPlanner() *Planner {
 	return &Planner{}
 }
 
+// buildPreview generates a PlanPreview for an intent and its steps.
+func buildPreview(intent *Intent, steps []ExecutionStep) *PlanPreview {
+	stepBullets := make([]string, 0, len(steps))
+	for _, s := range steps {
+		stepBullets = append(stepBullets, s.Description)
+	}
+
+	resources := []string{}
+	switch intent.Type {
+	case IntentDeploy:
+		resources = append(resources, fmt.Sprintf("Application %q", intent.Params["appName"]))
+	case IntentCreateProject:
+		resources = append(resources, fmt.Sprintf("Project %q", intent.Params["name"]))
+	}
+
+	title := fmt.Sprintf("Plan: %s", intent.Raw)
+	summary := fmt.Sprintf("This will execute %d steps to %s.", len(steps), intent.Raw)
+	if len(resources) > 0 {
+		summary += fmt.Sprintf(" Resources affected: %s", resources[0])
+	}
+
+	return &PlanPreview{
+		Title:       title,
+		Summary:     summary,
+		Steps:       stepBullets,
+		Resources:   resources,
+		EstimatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
 // Plan converts an Intent into an ExecutionPlan with ordered steps and dependencies
 func (pl *Planner) Plan(intent *Intent) (*ExecutionPlan, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -175,9 +205,61 @@ func (pl *Planner) Plan(intent *Intent) (*ExecutionPlan, error) {
 			},
 		}
 
+	// ── Deploy Intent ───────────────────────────────────────────────
+	case IntentDeploy:
+		appName := intent.Params["appName"]
+		runtime := intent.Params["runtime"]
+		sourceURL := intent.Params["sourceURL"]
+		appID := toID(appName)
+
+		plan.Steps = []ExecutionStep{
+			{
+				ID: "1", Name: "Validate Deploy Request",
+				Description:  fmt.Sprintf("Validating deploy request: %s app from %s", runtime, sourceURL),
+				Status:       StepPending,
+				Action:       "validate",
+				Target:       fmt.Sprintf("Deploy:%s", appID),
+			},
+			{
+				ID: "2", Name: "Create Application Resource",
+				Description:  fmt.Sprintf("Creating Application %q (runtime: %s) from %s", appName, runtime, sourceURL),
+				Status:       StepPending,
+				Action:       "application.create",
+				Target:       fmt.Sprintf("Application:%s", appID),
+				Dependencies: []string{"1"},
+			},
+			{
+				ID: "3", Name: "Wait for Application Controller",
+				Description:  "Waiting for the Application Controller to reconcile and generate deployment workflow",
+				Status:       StepPending,
+				Action:       "controller.reconcile",
+				Target:       "Application",
+				Dependencies: []string{"2"},
+			},
+			{
+				ID: "4", Name: "Check Application Status",
+				Description:  fmt.Sprintf("Verifying Application %q phase and health", appName),
+				Status:       StepPending,
+				Action:       "application.get",
+				Target:       fmt.Sprintf("Application:%s", appID),
+				Dependencies: []string{"3"},
+			},
+			{
+				ID: "5", Name: "Return Access URL",
+				Description:  fmt.Sprintf("Application %q is ready. Returning access URL.", appName),
+				Status:       StepPending,
+				Action:       "complete",
+				Target:       "",
+				Dependencies: []string{"4"},
+			},
+		}
+
 	default:
 		return nil, fmt.Errorf("unsupported intent type: %s", intent.Type)
 	}
+
+	// Build the PlanPreview for every plan
+	plan.Preview = buildPreview(intent, plan.Steps)
 
 	return plan, nil
 }

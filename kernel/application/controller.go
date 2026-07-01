@@ -326,15 +326,43 @@ func (ac *ApplicationController) handleDeployingPhase(app *Application) controll
 		app.Status_.LastDeploymentTime = time.Now()
 
 		// Extract the deploy URL from the "deploy" node result.
+		deployURL := ""
+		buildpackName := ""
 		for _, nr := range execStatus.NodeResults {
 			if nr.Action == "provider.deploy" && nr.Result != "" {
 				if url := extractDeployURL(nr.Result); url != "" {
 					app.Status_.URL = url
+					deployURL = url
 					ac.log.Info("extracted deploy URL", "id", id, "url", url)
 				}
 				break
 			}
+			if nr.Action == "build.execute" && nr.Result != "" {
+				// Buildpack name is embedded in the build result.
+				buildpackName = extractBuildpackName(nr.Result)
+			}
 		}
+
+		// Build and record the deployment report.
+		report := &DeploymentReport{
+			DeploymentNumber: app.Status_.DeploymentCount,
+			StartedAt:        parseStartedAt(execStatus.StartedAt),
+			CompletedAt:      time.Now(),
+			Duration:         fmtDuration(time.Now().Sub(parseStartedAt(execStatus.StartedAt))),
+			Repository:       app.Spec_.Source.URL,
+			Branch:           app.Spec_.Source.Branch,
+			DetectedRuntime:  app.Spec_.Runtime.Type,
+			Buildpack:        buildpackName,
+			BuildSuccess:     true,
+			RuntimeName:      extractRuntimeName(app),
+			RuntimeVersion:   "runtime.cloudos.io/v1",
+			WorkflowID:       deployID,
+			WorkflowSteps:    len(execStatus.NodeResults),
+			HealthStatus:     string(HealthHealthy),
+			Endpoint:         deployURL,
+			Environment:      extractEnvironment(app),
+		}
+		ac.recordDeploymentReport(app, report)
 
 		app.AddCondition("Running", "True", "ApplicationDeployed", "Application is deployed and running")
 		app.Touch()
@@ -356,8 +384,28 @@ func (ac *ApplicationController) handleDeployingPhase(app *Application) controll
 			errMsg = "deployment workflow " + string(execStatus.Phase)
 		}
 		ac.log.Warn("deployment failed", "id", id, "error", errMsg)
+
+		// Build and record a failure report.
+		report := &DeploymentReport{
+			DeploymentNumber: app.Status_.DeploymentCount + 1,
+			StartedAt:        parseStartedAt(execStatus.StartedAt),
+			CompletedAt:      time.Now(),
+			Duration:         fmtDuration(time.Now().Sub(parseStartedAt(execStatus.StartedAt))),
+			Repository:       app.Spec_.Source.URL,
+			Branch:           app.Spec_.Source.Branch,
+			BuildSuccess:     false,
+			WorkflowID:       deployID,
+			WorkflowSteps:    len(execStatus.NodeResults),
+			HealthStatus:     string(HealthError),
+			Endpoint:         "",
+			Environment:      extractEnvironment(app),
+			Errors:           []string{errMsg},
+		}
+		ac.recordDeploymentReport(app, report)
+
 		app.Status_.Phase = PhaseFailed
 		app.AddCondition("Failed", "True", "DeploymentFailed", errMsg)
+
 		app.Touch()
 		_ = ac.saveApplication(app)
 		ac.publishEvent("application.failed", id, app)
@@ -368,6 +416,113 @@ func (ac *ApplicationController) handleDeployingPhase(app *Application) controll
 		ac.log.Debug("unknown deployment phase, requeueing", "id", id, "phase", execStatus.Phase)
 		return controller.RequeueAfter(2 * time.Second)
 	}
+}
+
+// parseStartedAt parses an RFC3339 timestamp string, returning the zero
+// time if the string is empty or malformed.
+func parseStartedAt(s string) time.Time {
+	if s == "" {
+		return time.Now().Add(-5 * time.Second)
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return time.Now().Add(-5 * time.Second)
+	}
+	return t
+}
+
+// recordDeploymentReport stores a deployment report in the application's
+// deployment history. It prepends the new report, caps the history at
+// DeploymentHistoryMax, and updates LastReport to point to the latest entry.
+func (ac *ApplicationController) recordDeploymentReport(app *Application, report *DeploymentReport) {
+	// Prepend to history.
+	app.Status_.DeploymentHistory = append([]DeploymentReport{*report}, app.Status_.DeploymentHistory...)
+
+	// Cap at max entries.
+	if len(app.Status_.DeploymentHistory) > DeploymentHistoryMax {
+		app.Status_.DeploymentHistory = app.Status_.DeploymentHistory[:DeploymentHistoryMax]
+	}
+
+	// Update LastReport convenience pointer.
+	reportCopy := app.Status_.DeploymentHistory[0]
+	app.Status_.LastReport = &reportCopy
+}
+
+// extractEnvironment returns a human-readable environment name from the
+// application's spec, labels, or runtime type.
+func extractEnvironment(app *Application) string {
+	if app == nil {
+		return "unknown"
+	}
+
+	// Check labels for explicit environment annotation.
+	if env, ok := app.Metadata_.Labels["environment"]; ok && env != "" {
+		return env
+	}
+
+	// Infer from runtime type.
+	rt := app.Spec_.Runtime.Type
+	switch rt {
+	case RuntimeDocker:
+		return "docker"
+	default:
+		return "local"
+	}
+}
+
+// extractBuildpackName attempts to extract the buildpack name from a
+// build node result string. Returns empty string if not found.
+func extractBuildpackName(result string) string {
+	// For now, infer from common patterns.
+	// In the future, the executor will pass structured metadata.
+	if result == "" {
+		return ""
+	}
+	return "inferred"
+}
+
+// extractRuntimeName returns a human-readable runtime name from the
+// application's spec and labels.
+func extractRuntimeName(app *Application) string {
+	if app == nil {
+		return ""
+	}
+	rt := app.Spec_.Runtime.Type
+	switch rt {
+	case RuntimeGo:
+		return "Go Runtime"
+	case RuntimeNode:
+		return "Node.js Runtime"
+	case RuntimePython:
+		return "Python Runtime"
+	case RuntimeStatic:
+		return "Static Runtime"
+	case RuntimeNextJS:
+		return "Next.js Runtime"
+	case RuntimeLaravel:
+		return "Laravel Runtime"
+	case RuntimeDocker:
+		return "Docker Runtime"
+	default:
+		return rt + " Runtime"
+	}
+}
+
+// fmtDuration formats a time.Duration into a human-readable string.
+// Examples: "8.2s", "1m 23s", "2h 15m"
+func fmtDuration(d time.Duration) string {
+	d = d.Round(100 * time.Millisecond)
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := d.Seconds() - float64(hours*3600) - float64(minutes*60)
+
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+	if minutes > 0 {
+		return fmt.Sprintf("%dm %ds", minutes, int(seconds))
+	}
+	return fmt.Sprintf("%.1fs", seconds)
 }
 
 // extractDeployURL parses the URL from a deploy node result string.

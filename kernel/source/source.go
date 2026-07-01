@@ -71,6 +71,36 @@ type CloneResult struct {
 	Commit string `json:"commit,omitempty"`
 }
 
+// validateGitURL checks that a git URL uses an allowed scheme and does not
+// contain command injection characters. This prevents argument injection
+// attacks via malicious repository URLs passed to exec.Command.
+//
+// Allowed schemes:
+//   - https://  (remote repositories)
+//   - git@     (SSH-style remote repositories)
+//   - file://  (local repositories, for testing)
+func validateGitURL(url string) error {
+	// Reject URLs containing shell metacharacters or Git flag injection.
+	disallowed := []string{"--", ";", "|", "`", "$", "(", ")", "\n", "\r"}
+	for _, ch := range disallowed {
+		if strings.Contains(url, ch) {
+			return fmt.Errorf("git URL contains disallowed characters (%q)", ch)
+		}
+	}
+
+	// Allow only known schemes.
+	switch {
+	case strings.HasPrefix(url, "https://"):
+		return nil
+	case strings.HasPrefix(url, "git@"):
+		return nil
+	case strings.HasPrefix(url, "file://"):
+		return nil
+	default:
+		return fmt.Errorf("unsupported git URL scheme: %q (must be https://, git@, or file://)", url)
+	}
+}
+
 // Clone clones a git repository to a local directory within the work directory.
 //
 // Parameters:
@@ -86,6 +116,9 @@ func (g *GitCloner) Clone(ctx context.Context, url, branch, appID string) (*Clon
 	}
 	if appID == "" {
 		return nil, fmt.Errorf("app ID is required")
+	}
+	if err := validateGitURL(url); err != nil {
+		return nil, fmt.Errorf("invalid git URL: %w", err)
 	}
 	if branch == "" {
 		branch = "main"

@@ -6,8 +6,8 @@ We welcome contributions from the community! This document outlines the process 
 
 1. Fork the repository
 2. Read the [architecture documentation](docs/ARCHITECTURE.md) to understand the system
-3. Review our [coding standards](docs/CODING_STANDARDS.md)
-4. Check the [roadmap](docs/ROADMAP.md) for planned features
+3. Read the [development guide](docs/DEVELOPMENT.md) for build and code conventions
+4. Check the [release notes](docs/releases/v0.6.md) for the current status and roadmap
 
 ## Development Process
 

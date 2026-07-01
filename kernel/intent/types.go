@@ -14,19 +14,21 @@ const (
 	IntentShowControllers IntentType = "show_controllers"
 	IntentShowResources   IntentType = "show_resources"
 	IntentShowHealth      IntentType = "show_health"
+	IntentDeploy          IntentType = "deploy"
 )
 
 // IntentStatus represents the lifecycle status of an intent.
 type IntentStatus string
 
 const (
-	IntentPending    IntentStatus = "pending"
-	IntentParsing    IntentStatus = "parsing"
-	IntentValidating IntentStatus = "validating"
-	IntentPlanning   IntentStatus = "planning"
-	IntentExecuting  IntentStatus = "executing"
-	IntentCompleted  IntentStatus = "completed"
-	IntentFailed     IntentStatus = "failed"
+	IntentPending           IntentStatus = "pending"
+	IntentParsing           IntentStatus = "parsing"
+	IntentValidating        IntentStatus = "validating"
+	IntentPlanning          IntentStatus = "planning"
+	IntentAwaitingApproval  IntentStatus = "awaiting_approval"
+	IntentExecuting         IntentStatus = "executing"
+	IntentCompleted         IntentStatus = "completed"
+	IntentFailed            IntentStatus = "failed"
 )
 
 // StepStatus represents the status of an execution step.
@@ -68,12 +70,23 @@ type ResultItem struct {
 	Detail  string `json:"detail,omitempty"`
 }
 
+// PlanPreview is a human-readable preview shown to the user before execution.
+// It enables the Explain Mode / Trust layer — users see what will happen before it happens.
+type PlanPreview struct {
+	Title       string   `json:"title"`
+	Summary     string   `json:"summary"`
+	Steps       []string `json:"steps"`       // bullet-point list of actions
+	Resources   []string `json:"resources"`   // resources that will be created/modified
+	EstimatedAt string   `json:"estimatedAt"` // when this preview was generated
+}
+
 // ExecutionPlan is an ordered sequence of steps that fulfills an intent.
 type ExecutionPlan struct {
 	ID         string          `json:"id"`
 	IntentID   string          `json:"intentId"`
 	IntentType IntentType      `json:"intentType"`
 	Status     IntentStatus    `json:"status"`
+	Preview    *PlanPreview    `json:"preview,omitempty"` // shown to user before confirmation
 	Steps      []ExecutionStep `json:"steps"`
 	CreatedAt  string          `json:"createdAt"`
 	UpdatedAt  string          `json:"updatedAt"`

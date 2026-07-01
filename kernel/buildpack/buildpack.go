@@ -1,63 +1,165 @@
-// Package buildpack provides automatic runtime detection for CloudOS
-// applications. It inspects a project directory for well-known files
-// (package.json, go.mod, requirements.txt, etc.) and determines the
-// runtime type, build commands, install commands, and output directory.
+// Package buildpack provides automatic detection, planning, and building of
+// CloudOS applications. It inspects a project directory for well-known files
+// (package.json, go.mod, requirements.txt, etc.), produces a build plan, and
+// executes the build to produce an Artifact.
 //
-// This enables CloudOS to deploy any project without manual configuration —
-// just point it at a repository and it figures out how to build and run it.
+// A Buildpack Engine orchestrates the pipeline:
 //
-// Detection hierarchy (first match wins):
+//	Source
+//	   │
+//	   ▼
+//	Engine.Detect()   ←  asks each buildpack: "Can you build this?"
+//	   │
+//	   ▼
+//	Engine.Plan()     ←  produces a BuildPlan (commands, output dir, env)
+//	   │
+//	   ▼
+//	Engine.Build()    ←  executes the plan, produces an Artifact
+//	   │
+//	   ▼
+//	Artifact
+//	   │
+//	   ▼
+//	Runtime.Prepare() → Runtime.Start()
 //
-//	1. Dockerfile          → RuntimeDocker
-//	2. package.json        → RuntimeNode / RuntimeNextJS / RuntimeReact
-//	3. go.mod              → RuntimeGo
-//	4. requirements.txt    → RuntimePython
-//	5. setup.py / setup.cfg → RuntimePython
-//	6. composer.json       → RuntimeLaravel
-//	7. index.html          → RuntimeStatic
-//	8. fallback            → RuntimeStatic
+// The Engine knows nothing about individual buildpacks. It just iterates
+// through registered buildpacks in priority order until one says "yes".
+//
+// Detection priority (first match wins):
+//
+//	1. Go          (go.mod)
+//	2. Next.js     (package.json + "next" dependency)
+//	3. React       (package.json + "react" + build tool)
+//	4. Node.js     (package.json — generic)
+//	5. Laravel     (composer.json)
+//	6. Python      (requirements.txt / setup.py / Pipfile)
+//	7. Docker      (Dockerfile)
+//	8. Static      (always matches — fallback)
 package buildpack
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
-// ── Buildpack Interface ────────────────────────────────────────────────────
-
-// Buildpack is the interface for automatic runtime detection and build planning.
+// ── API Version ─────────────────────────────────────────────────────────────
 //
-// Each Buildpack knows how to detect if it applies to a project directory,
-// and if so, how to plan the build and runtime configuration.
+// BuildpackAPIVersion is the frozen version of the Buildpack interface.
+// Per ADR-0011, this contract is declared v1.0 and will only receive
+// additive extensions via optional interfaces.
+//
+// Every Buildpack implementation declares which API version it implements.
+const BuildpackAPIVersion = "buildpack.cloudos.io/v1"
+
+// ── Source ──────────────────────────────────────────────────────────────────
+
+// Source describes where the application source code lives.
+type Source struct {
+	// Path is the local filesystem path to the source code.
+	Path string
+
+	// GitURL is the optional git repository URL the source was cloned from.
+	GitURL string
+
+	// Branch is the git branch (if applicable).
+	Branch string
+
+	// Commit is the specific commit hash (if applicable).
+	Commit string
+}
+
+// ── Diagnostic ──────────────────────────────────────────────────────────────
+
+// Diagnostic provides detailed information about a build step.
+type Diagnostic struct {
+	// Step identifies the build step (e.g. "detect", "install", "build").
+	Step string `json:"step"`
+
+	// Message is a human-readable description.
+	Message string `json:"message"`
+
+	// Duration is how long the step took.
+	Duration string `json:"duration,omitempty"`
+
+	// Level indicates severity: "info", "warning", "error".
+	Level string `json:"level,omitempty"`
+}
+
+// ── BuildResult ─────────────────────────────────────────────────────────────
+
+// BuildResult wraps the output of a Buildpack.Build() call with metadata,
+// warnings, and diagnostics for observability and AI analysis.
+type BuildResult struct {
+	// Artifact is the built application artifact.
+	Artifact *Artifact `json:"artifact"`
+
+	// RuntimeType indicates which runtime type this artifact needs.
+	RuntimeType string `json:"runtimeType"`
+
+	// Metadata contains structured key-value data about the build.
+	// Examples: {"build_time": "8.2s", "bundle_size": "420KB", "node_version": "22"}
+	Metadata map[string]string `json:"metadata,omitempty"`
+
+	// Warnings are non-fatal issues discovered during the build.
+	Warnings []string `json:"warnings,omitempty"`
+
+	// Diagnostics provide detailed per-step build information.
+	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
+}
+
+// ── Buildpack Interface ─────────────────────────────────────────────────────
+
+// Buildpack is the interface for automatic detection, planning, and building
+// of CloudOS applications.
+//
+// Each Buildpack knows three things:
+//  1. Can it build this source?           → Detect()
+//  2. How should it be built?             → Plan()
+//  3. Execute the build, produce output   → Build()
 //
 // Architecture:
 //
-//	BuildpackRegistry
-//	    ├── DockerBuildpack
-//	    ├── NodeBuildpack    (Next.js, React, generic Node)
-//	    ├── GoBuildpack
-//	    ├── PythonBuildpack
-//	    ├── LaravelBuildpack
-//	    └── StaticBuildpack (fallback)
-//
-// The registry iterates buildpacks in priority order and returns the first match.
+//	Engine
+//	  ├── StaticBuildpack  (fallback — always matches)
+//	  ├── GoBuildpack      (go.mod)
+//	  ├── NextJSBuildpack  (package.json + "next")
+//	  ├── ReactBuildpack   (package.json + "react" + build tool)
+//	  ├── NodeBuildpack    (package.json — generic)
+//	  ├── LaravelBuildpack (composer.json)
+//	  ├── PythonBuildpack  (requirements.txt / setup.py / Pipfile)
+//	  └── DockerBuildpack  (Dockerfile)
 type Buildpack interface {
-	// Name returns the buildpack identifier (e.g. "node", "go", "python").
+	// Name returns the buildpack identifier (e.g. "go", "node", "python").
 	Name() string
 
-	// Detect checks if this buildpack applies to the project directory.
-	// Returns true if the project matches this buildpack's criteria.
-	Detect(dir string) (bool, error)
+	// Version returns the buildpack version.
+	Version() string
 
-	// Plan generates the build and runtime configuration for the project.
+	// Detect checks if this buildpack applies to the source.
+	// Returns true if the source matches this buildpack's criteria.
+	Detect(ctx context.Context, src Source) (bool, error)
+
+	// Plan generates the build and runtime configuration for the source.
 	// Called only if Detect returned true.
-	Plan(dir string) (*BuildPlan, error)
+	Plan(ctx context.Context, src Source) (*BuildPlan, error)
+
+	// Build executes the build plan and produces a BuildResult containing
+	// the artifact plus metadata, warnings, and diagnostics.
+	Build(ctx context.Context, plan *BuildPlan) (*BuildResult, error)
 }
+
+// ── BuildPlan ───────────────────────────────────────────────────────────────
 
 // BuildPlan contains the build and runtime configuration produced by a Buildpack.
 type BuildPlan struct {
+	// BuildpackName identifies which buildpack produced this plan.
+	BuildpackName string `json:"buildpackName"`
+
 	// RuntimeType is the runtime type string (e.g. "node", "go", "python").
 	RuntimeType string `json:"runtimeType"`
 
@@ -67,6 +169,9 @@ type BuildPlan struct {
 	// Version is the detected version (if available).
 	Version string `json:"version,omitempty"`
 
+	// ArtifactType indicates what kind of artifact this build produces.
+	ArtifactType ArtifactType `json:"artifactType"`
+
 	// InstallCmd is the command to install dependencies.
 	InstallCmd string `json:"installCmd,omitempty"`
 
@@ -75,7 +180,7 @@ type BuildPlan struct {
 	BuildCmd string `json:"buildCmd,omitempty"`
 
 	// OutputDir is the directory containing build output (e.g. "build", "dist").
-	// Empty means the project root is the output.
+	// Empty means the source root is the output.
 	OutputDir string `json:"outputDir,omitempty"`
 
 	// StartCmd is the command to start the application.
@@ -86,58 +191,234 @@ type BuildPlan struct {
 
 	// EnvVars are recommended environment variables for the runtime.
 	EnvVars map[string]string `json:"envVars,omitempty"`
+
+	// Source is the source this plan was created from.
+	Source Source `json:"-"`
 }
 
-// ── Buildpack Registry ─────────────────────────────────────────────────────
+// ── Artifact ────────────────────────────────────────────────────────────────
 
-// BuildpackRegistry holds ordered buildpacks and provides detection.
-type BuildpackRegistry struct {
+// ArtifactType categorizes build artifacts.
+type ArtifactType string
+
+const (
+	ArtifactTypeBinary  ArtifactType = "binary"  // Compiled binary (Go, Rust, C)
+	ArtifactTypeStatic  ArtifactType = "static"  // Static files (HTML, JS, CSS)
+	ArtifactTypeSource  ArtifactType = "source"  // Source directory (Python, PHP, Node)
+	ArtifactTypeImage   ArtifactType = "image"   // Container image (Docker)
+	ArtifactTypeArchive ArtifactType = "archive" // Tarball / zip
+)
+
+// Artifact is the output of a Buildpack.Build() call.
+// It represents a built application ready for Runtime execution.
+//
+// Artifact is designed to parallel the Resource pattern:
+//
+//	kind: Artifact
+//	metadata:
+//	  id: "artifact-..."
+//	  labels: ...
+//	spec:
+//	  type: "static"
+//	  path: "/path/to/dist"
+//	  startCmd: "npx serve -s ."
+type Artifact struct {
+	// ID is a unique identifier for this artifact.
+	ID string `json:"id"`
+
+	// Type indicates the artifact type.
+	Type ArtifactType `json:"type"`
+
+	// BuildpackName identifies which buildpack produced this artifact.
+	BuildpackName string `json:"buildpackName"`
+
+	// RuntimeType indicates which runtime should execute this artifact.
+	RuntimeType string `json:"runtimeType"`
+
+	// Path is the filesystem path to the artifact.
+	Path string `json:"path"`
+
+	// StartCmd is the command to start the application from this artifact.
+	StartCmd string `json:"startCmd"`
+
+	// DevPort is the default port the application listens on.
+	DevPort int `json:"devPort"`
+
+	// EnvVars are recommended environment variables.
+	EnvVars map[string]string `json:"envVars,omitempty"`
+
+	// Source describes the source code this artifact was built from.
+	Source Source `json:"source,omitempty"`
+
+	// CreatedAt is when this artifact was produced.
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Metadata contains additional metadata.
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// ── Buildpack Engine ────────────────────────────────────────────────────────
+
+// Engine orchestrates the buildpack pipeline: Detect → Plan → Build.
+//
+// Usage:
+//
+//	engine := buildpack.NewEngine()
+//	bp, err := engine.Detect(ctx, src)      // which buildpack?
+//	plan, err := engine.Plan(ctx, src, bp)  // how to build?
+//	artifact, err := engine.Build(ctx, plan) // do it!
+//
+// Or in one call:
+//
+//	artifact, err := engine.Run(ctx, src) // detect + plan + build
+type Engine struct {
 	buildpacks []Buildpack
 }
 
-// NewBuildpackRegistry creates a registry with the default buildpacks.
-func NewBuildpackRegistry() *BuildpackRegistry {
-	return &BuildpackRegistry{
+// NewEngine creates a buildpack Engine with the default buildpacks.
+func NewEngine() *Engine {
+	return &Engine{
 		buildpacks: DefaultBuildpacks(),
 	}
 }
 
-// Register adds a buildpack to the end of the registry.
-func (r *BuildpackRegistry) Register(bp Buildpack) {
-	r.buildpacks = append(r.buildpacks, bp)
+// Register adds a buildpack to the end of the detection chain.
+func (e *Engine) Register(bp Buildpack) {
+	e.buildpacks = append(e.buildpacks, bp)
 }
 
-// Detect iterates registered buildpacks in order and returns the first match.
-func (r *BuildpackRegistry) Detect(dir string) (*BuildPlan, error) {
-	for _, bp := range r.buildpacks {
-		ok, err := bp.Detect(dir)
+// Buildpacks returns the registered buildpacks.
+func (e *Engine) Buildpacks() []Buildpack {
+	result := make([]Buildpack, len(e.buildpacks))
+	copy(result, e.buildpacks)
+	return result
+}
+
+// Detect iterates registered buildpacks in priority order and returns the
+// first one that matches the source. Returns nil if no buildpack matches.
+//
+// This is a lightweight operation — each buildpack just checks for the
+// presence of well-known files.
+func (e *Engine) Detect(ctx context.Context, src Source) (Buildpack, error) {
+	for _, bp := range e.buildpacks {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		ok, err := bp.Detect(ctx, src)
 		if err != nil {
 			continue // skip broken buildpacks
 		}
 		if ok {
-			return bp.Plan(dir)
+			return bp, nil
 		}
 	}
-	// Fallback to static.
-	return (&StaticBuildpack{}).Plan(dir)
+	// StaticBuildpack should always match, but if it's not registered,
+	// return nil instead of panicking.
+	return nil, fmt.Errorf("no buildpack matched for source %q", src.Path)
 }
 
+// Plan generates a BuildPlan from a source using the given buildpack.
+// The buildpack must have been returned by Detect().
+func (e *Engine) Plan(ctx context.Context, src Source, bp Buildpack) (*BuildPlan, error) {
+	plan, err := bp.Plan(ctx, src)
+	if err != nil {
+		return nil, fmt.Errorf("buildpack %q plan: %w", bp.Name(), err)
+	}
+	plan.Source = src
+	plan.BuildpackName = bp.Name()
+	return plan, nil
+}
+
+// Build executes a BuildPlan and returns a BuildResult containing the
+// produced Artifact plus metadata, warnings, and diagnostics.
+func (e *Engine) Build(ctx context.Context, plan *BuildPlan) (*BuildResult, error) {
+	// Find the buildpack that created this plan.
+	var bp Buildpack
+	for _, candidate := range e.buildpacks {
+		if candidate.Name() == plan.BuildpackName {
+			bp = candidate
+			break
+		}
+	}
+	if bp == nil {
+		return nil, fmt.Errorf("buildpack %q not found for build", plan.BuildpackName)
+	}
+
+	result, err := bp.Build(ctx, plan)
+	if err != nil {
+		return nil, fmt.Errorf("buildpack %q build: %w", bp.Name(), err)
+	}
+
+	// Ensure artifact has all the metadata from the plan.
+	if result.Artifact == nil {
+		return nil, fmt.Errorf("buildpack %q returned nil artifact", bp.Name())
+	}
+	if result.Artifact.ID == "" {
+		result.Artifact.ID = fmt.Sprintf("artifact-%d", time.Now().UnixNano())
+	}
+	if result.Artifact.BuildpackName == "" {
+		result.Artifact.BuildpackName = bp.Name()
+	}
+	if result.Artifact.RuntimeType == "" {
+		result.Artifact.RuntimeType = plan.RuntimeType
+	}
+	if result.Artifact.CreatedAt.IsZero() {
+		result.Artifact.CreatedAt = time.Now()
+	}
+	result.Artifact.Source = plan.Source
+	if result.RuntimeType == "" {
+		result.RuntimeType = plan.RuntimeType
+	}
+
+	return result, nil
+}
+
+// Run is a convenience method that combines Detect + Plan + Build into
+// a single call. Returns the BuildResult or an error at any stage.
+func (e *Engine) Run(ctx context.Context, src Source) (*BuildResult, error) {
+	bp, err := e.Detect(ctx, src)
+	if err != nil {
+		return nil, fmt.Errorf("detect: %w", err)
+	}
+
+	plan, err := e.Plan(ctx, src, bp)
+	if err != nil {
+		return nil, fmt.Errorf("plan: %w", err)
+	}
+
+	result, err := e.Build(ctx, plan)
+	if err != nil {
+		return nil, fmt.Errorf("build: %w", err)
+	}
+
+	return result, nil
+}
+
+// ── Default Buildpacks ─────────────────────────────────────────────────────
+
 // DefaultBuildpacks returns the standard buildpack chain in priority order.
+//
+// Note: StaticBuildpack is the universal fallback and must be last —
+// its Detect() always returns true.
 func DefaultBuildpacks() []Buildpack {
 	return []Buildpack{
-		&DockerBuildpack{},
-		&NodeBuildpack{},
-		&GoBuildpack{},
-		&PythonBuildpack{},
-		&LaravelBuildpack{},
-		&StaticBuildpack{},
+		&GoBuildpack{},      // 1. go.mod
+		&NextJSBuildpack{},  // 2. package.json + "next"
+		&ReactBuildpack{},   // 3. package.json + react + build tool
+		&NodeBuildpack{},    // 4. package.json (generic Node.js)
+		&LaravelBuildpack{}, // 5. composer.json
+		&PythonBuildpack{},  // 6. requirements.txt / setup.py / Pipfile
+		&DockerBuildpack{},  // 7. Dockerfile
+		&StaticBuildpack{},  // 8. Always matches (fallback)
 	}
 }
 
-// ── DetectedRuntime (backward compat) ──────────────────────────────────────
+// ── Backward Compat ─────────────────────────────────────────────────────────
 
 // DetectedRuntime describes the runtime detected from a project directory.
-// This type is kept for backward compatibility; new code should use BuildPlan.
+// Deprecated: Use Engine.Detect() + Engine.Plan() instead.
 type DetectedRuntime struct {
 	Type       string            `json:"type"`
 	Name       string            `json:"name"`
@@ -150,8 +431,7 @@ type DetectedRuntime struct {
 	EnvVars    map[string]string `json:"envVars,omitempty"`
 }
 
-// ── Runtime type constants ────────────────────────────────────────────────
-
+// Runtime type constants (kept for backward compat).
 const (
 	RuntimeNode    = "node"
 	RuntimeReact   = "react"
@@ -164,43 +444,22 @@ const (
 	RuntimeGeneric = "generic"
 )
 
-// ── Package.json structures ────────────────────────────────────────────────
-
-// packageJSON represents the structure of a Node.js package.json file.
-type packageJSON struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
-	Scripts struct {
-		Build string `json:"build,omitempty"`
-		Start string `json:"start,omitempty"`
-		Dev   string `json:"dev,omitempty"`
-	} `json:"scripts,omitempty"`
-	Dependencies    map[string]string `json:"dependencies,omitempty"`
-	DevDependencies map[string]string `json:"devDependencies,omitempty"`
-}
-
-// composerJSON represents the structure of a PHP composer.json file.
-type composerJSON struct {
-	Name    string `json:"name"`
-	Require map[string]string `json:"require,omitempty"`
-}
-
 // Detect inspects a project directory and returns the detected runtime.
-// It walks well-known files in order of specificity and returns the first match.
-//
-// Returns a DetectedRuntime with all commands and settings, or an error
-// if the directory cannot be read.
+// Deprecated: Use NewEngine().Run() or Engine.Detect() + Plan().
 func Detect(projectDir string) (*DetectedRuntime, error) {
-	// Use the BuildpackRegistry for detection.
-	registry := NewBuildpackRegistry()
-	plan, err := registry.Detect(projectDir)
+	engine := NewEngine()
+	src := Source{Path: projectDir}
+	bp, err := engine.Detect(context.Background(), src)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := engine.Plan(context.Background(), src, bp)
 	if err != nil {
 		return nil, err
 	}
 	return planToDetected(plan), nil
 }
 
-// planToDetected converts a BuildPlan to a DetectedRuntime for backward compat.
 func planToDetected(plan *BuildPlan) *DetectedRuntime {
 	return &DetectedRuntime{
 		Type:       plan.RuntimeType,
@@ -215,271 +474,28 @@ func planToDetected(plan *BuildPlan) *DetectedRuntime {
 	}
 }
 
-// ── Buildpack Implementations ─────────────────────────────────────────────
+// ── Runtime type constants (new) ───────────────────────────────────────────
 
-// ── Node Buildpack ─────────────────────────────────────────────────────────
-
-// NodeBuildpack detects Node.js, Next.js, and React projects.
-type NodeBuildpack struct{}
-
-func (bp *NodeBuildpack) Name() string { return "node" }
-
-func (bp *NodeBuildpack) Detect(dir string) (bool, error) {
-	return hasFile(dir, "package.json"), nil
-}
-
-func (bp *NodeBuildpack) Plan(dir string) (*BuildPlan, error) {
-	return planNode(dir)
-}
-
-// ── Go Buildpack ───────────────────────────────────────────────────────────
-
-// GoBuildpack detects Go projects.
-type GoBuildpack struct{}
-
-func (bp *GoBuildpack) Name() string { return "go" }
-
-func (bp *GoBuildpack) Detect(dir string) (bool, error) {
-	return hasFile(dir, "go.mod"), nil
-}
-
-func (bp *GoBuildpack) Plan(dir string) (*BuildPlan, error) {
-	return planGo(dir), nil
-}
-
-// ── Python Buildpack ───────────────────────────────────────────────────────
-
-// PythonBuildpack detects Python projects.
-type PythonBuildpack struct{}
-
-func (bp *PythonBuildpack) Name() string { return "python" }
-
-func (bp *PythonBuildpack) Detect(dir string) (bool, error) {
-	return hasFile(dir, "requirements.txt") ||
-		hasFile(dir, "setup.py") ||
-		hasFile(dir, "setup.cfg") ||
-		hasFile(dir, "Pipfile"), nil
-}
-
-func (bp *PythonBuildpack) Plan(dir string) (*BuildPlan, error) {
-	return planPython(dir), nil
-}
-
-// ── Laravel Buildpack ──────────────────────────────────────────────────────
-
-// LaravelBuildpack detects PHP/Laravel projects.
-type LaravelBuildpack struct{}
-
-func (bp *LaravelBuildpack) Name() string { return "laravel" }
-
-func (bp *LaravelBuildpack) Detect(dir string) (bool, error) {
-	return hasFile(dir, "composer.json"), nil
-}
-
-func (bp *LaravelBuildpack) Plan(dir string) (*BuildPlan, error) {
-	return planLaravel(dir)
-}
-
-// ── Docker Buildpack ───────────────────────────────────────────────────────
-
-// DockerBuildpack detects Dockerfile-based projects.
-type DockerBuildpack struct{}
-
-func (bp *DockerBuildpack) Name() string { return "docker" }
-
-func (bp *DockerBuildpack) Detect(dir string) (bool, error) {
-	return hasFile(dir, "Dockerfile"), nil
-}
-
-func (bp *DockerBuildpack) Plan(dir string) (*BuildPlan, error) {
-	return planDocker(dir), nil
-}
-
-// ── Static Buildpack ───────────────────────────────────────────────────────
-
-// StaticBuildpack is the fallback buildpack for static HTML sites.
-type StaticBuildpack struct{}
-
-func (bp *StaticBuildpack) Name() string { return "static" }
-
-func (bp *StaticBuildpack) Detect(dir string) (bool, error) {
-	// Always returns true as the fallback.
-	return true, nil
-}
-
-func (bp *StaticBuildpack) Plan(dir string) (*BuildPlan, error) {
-	return planStatic(dir), nil
-}
-
-// ── Internal Planning Functions ─────────────────────────────────────────────
-
-// planNode plans the build for Node.js-based projects (Next.js, React, generic).
-func planNode(projectDir string) (*BuildPlan, error) {
-	pkg, err := readPackageJSON(projectDir)
-	if err != nil {
-		return &BuildPlan{
-			RuntimeType: RuntimeNode,
-			Name:        "Node.js",
-			InstallCmd:  "npm install",
-			BuildCmd:    "",
-			StartCmd:    "npm start",
-			DevPort:     3000,
-		}, nil
-	}
-
-	if isNextJS(pkg) {
-		return &BuildPlan{
-			RuntimeType: RuntimeNextJS,
-			Name:        "Next.js",
-			Version:     pkg.Version,
-			InstallCmd:  "npm install",
-			BuildCmd:    pkg.Scripts.Build,
-			StartCmd:    "npm start",
-			OutputDir:   ".next",
-			DevPort:     3000,
-		}, nil
-	}
-
-	if isReact(pkg) {
-		return &BuildPlan{
-			RuntimeType: RuntimeReact,
-			Name:        "React",
-			Version:     pkg.Version,
-			InstallCmd:  "npm install",
-			BuildCmd:    pkg.Scripts.Build,
-			StartCmd:    "npx serve -s build -l {port}",
-			OutputDir:   "build",
-			DevPort:     3000,
-		}, nil
-	}
-
-	buildCmd := pkg.Scripts.Build
-	startCmd := pkg.Scripts.Start
-	if startCmd == "" {
-		startCmd = "npm start"
-	}
-
-	return &BuildPlan{
-		RuntimeType: RuntimeNode,
-		Name:        "Node.js",
-		Version:     pkg.Version,
-		InstallCmd:  "npm install",
-		BuildCmd:    buildCmd,
-		StartCmd:    startCmd,
-		OutputDir:   "",
-		DevPort:     defaultNodePort(pkg),
-	}, nil
-}
-
-func planGo(projectDir string) *BuildPlan {
-	return &BuildPlan{
-		RuntimeType: RuntimeGo,
-		Name:        "Go",
-		InstallCmd:  "go mod download",
-		BuildCmd:    "go build -o app .",
-		StartCmd:    "./app",
-		OutputDir:   "",
-		DevPort:     8080,
+// ArtifactFromPlan creates an Artifact from a BuildPlan and a build output path.
+// This is a helper for Buildpack implementations.
+func ArtifactFromPlan(plan *BuildPlan, outputPath string) *Artifact {
+	return &Artifact{
+		ID:            fmt.Sprintf("artifact-%d", time.Now().UnixNano()),
+		Type:          plan.ArtifactType,
+		BuildpackName: plan.BuildpackName,
+		RuntimeType:   plan.RuntimeType,
+		Path:          outputPath,
+		StartCmd:      plan.StartCmd,
+		DevPort:       plan.DevPort,
+		EnvVars:       plan.EnvVars,
+		Source:        plan.Source,
+		CreatedAt:     time.Now(),
 	}
 }
 
-func planPython(projectDir string) *BuildPlan {
-	installCmd := "pip install -r requirements.txt"
-	if hasFile(projectDir, "Pipfile") {
-		installCmd = "pipenv install"
-	}
+// ── Shared Helpers ─────────────────────────────────────────────────────────
 
-	startCmd := "python app.py"
-	if hasFile(projectDir, "manage.py") {
-		startCmd = "python manage.py runserver 0.0.0.0:{port}"
-	} else if hasFile(projectDir, "wsgi.py") {
-		startCmd = "gunicorn wsgi:app --bind 0.0.0.0:{port}"
-	} else if hasFile(projectDir, "app.py") {
-		startCmd = "python app.py"
-	} else if hasFile(projectDir, "main.py") {
-		startCmd = "python main.py"
-	}
-
-	return &BuildPlan{
-		RuntimeType: RuntimePython,
-		Name:        "Python",
-		InstallCmd:  installCmd,
-		BuildCmd:    "",
-		StartCmd:    startCmd,
-		OutputDir:   "",
-		DevPort:     8000,
-		EnvVars: map[string]string{
-			"PYTHONUNBUFFERED": "1",
-		},
-	}
-}
-
-func planLaravel(projectDir string) (*BuildPlan, error) {
-	if _, err := readComposerJSON(projectDir); err != nil {
-		return &BuildPlan{
-			RuntimeType: RuntimeLaravel,
-			Name:        "PHP",
-			InstallCmd:  "composer install",
-			BuildCmd:    "",
-			StartCmd:    "php artisan serve --host=0.0.0.0 --port={port}",
-			DevPort:     8000,
-		}, nil
-	}
-
-	installCmd := "composer install"
-	startCmd := "php artisan serve --host=0.0.0.0 --port={port}"
-
-	if hasFile(projectDir, "artisan") {
-		return &BuildPlan{
-			RuntimeType: RuntimeLaravel,
-			Name:        "Laravel",
-			InstallCmd:  installCmd,
-			BuildCmd:    "",
-			StartCmd:    startCmd,
-			OutputDir:   "public",
-			DevPort:     8000,
-			EnvVars: map[string]string{
-				"APP_ENV": "local",
-			},
-		}, nil
-	}
-
-	return &BuildPlan{
-		RuntimeType: RuntimeLaravel,
-		Name:        "PHP",
-		InstallCmd:  installCmd,
-		BuildCmd:    "",
-		StartCmd:    startCmd,
-		DevPort:     8000,
-	}, nil
-}
-
-func planStatic(projectDir string) *BuildPlan {
-	return &BuildPlan{
-		RuntimeType: RuntimeStatic,
-		Name:        "Static Website",
-		InstallCmd:  "",
-		BuildCmd:    "",
-		StartCmd:    "",
-		OutputDir:   "",
-		DevPort:     80,
-	}
-}
-
-func planDocker(projectDir string) *BuildPlan {
-	return &BuildPlan{
-		RuntimeType: RuntimeDocker,
-		Name:        "Docker",
-		InstallCmd:  "",
-		BuildCmd:    "docker build -t {app} .",
-		StartCmd:   "docker run -p {port}:{port} {app}",
-		DevPort:    0, // Port defined by Dockerfile EXPOSE
-	}
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-// hasFile checks if a file exists in the project directory.
+// hasFile checks if a file exists in the directory.
 func hasFile(dir, name string) bool {
 	path := filepath.Join(dir, name)
 	info, err := os.Stat(path)
@@ -499,124 +515,77 @@ func hasDir(dir, name string) bool {
 	return info.IsDir()
 }
 
+// readFile reads a file from the source directory.
+func readFile(src Source, name string) ([]byte, error) {
+	path := filepath.Join(src.Path, name)
+	return os.ReadFile(path)
+}
+
+// fileExists checks if a file exists in the source directory.
+func fileExists(src Source, name string) bool {
+	return hasFile(src.Path, name)
+}
+
+// getVersion safely extracts a version string from a PackageJSON pointer.
+func getVersion(pkg *PackageJSON) string {
+	if pkg != nil {
+		return pkg.Version
+	}
+	return ""
+}
+
+// StartCommandWithPort replaces {port} placeholders in the start command
+// with the actual port number.
+func StartCommandWithPort(cmd string, port int) string {
+	portStr := fmt.Sprintf("%d", port)
+	return strings.ReplaceAll(cmd, "{port}", portStr)
+}
+
+// ── Package.json structures (shared by Node, React, Next.js) ────────────────
+
+// PackageJSON represents the structure of a Node.js package.json file.
+type PackageJSON struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Scripts struct {
+		Build string `json:"build,omitempty"`
+		Start string `json:"start,omitempty"`
+		Dev   string `json:"dev,omitempty"`
+	} `json:"scripts,omitempty"`
+	Dependencies    map[string]string `json:"dependencies,omitempty"`
+	DevDependencies map[string]string `json:"devDependencies,omitempty"`
+}
+
 // readPackageJSON reads and parses a package.json file.
-func readPackageJSON(dir string) (*packageJSON, error) {
-	path := filepath.Join(dir, "package.json")
-	data, err := os.ReadFile(path)
+func readPackageJSON(src Source) (*PackageJSON, error) {
+	data, err := readFile(src, "package.json")
 	if err != nil {
 		return nil, err
 	}
-
-	var pkg packageJSON
+	var pkg PackageJSON
 	if err := json.Unmarshal(data, &pkg); err != nil {
 		return nil, err
 	}
 	return &pkg, nil
 }
 
+// ── Composer.json structures (shared by Laravel) ────────────────────────────
+
+// ComposerJSON represents the structure of a PHP composer.json file.
+type ComposerJSON struct {
+	Name    string            `json:"name"`
+	Require map[string]string `json:"require,omitempty"`
+}
+
 // readComposerJSON reads and parses a composer.json file.
-func readComposerJSON(dir string) (*composerJSON, error) {
-	path := filepath.Join(dir, "composer.json")
-	data, err := os.ReadFile(path)
+func readComposerJSON(src Source) (*ComposerJSON, error) {
+	data, err := readFile(src, "composer.json")
 	if err != nil {
 		return nil, err
 	}
-
-	var composer composerJSON
+	var composer ComposerJSON
 	if err := json.Unmarshal(data, &composer); err != nil {
 		return nil, err
 	}
 	return &composer, nil
-}
-
-// isNextJS checks if a package.json indicates a Next.js project.
-func isNextJS(pkg *packageJSON) bool {
-	if _, ok := pkg.Dependencies["next"]; ok {
-		return true
-	}
-	if _, ok := pkg.DevDependencies["next"]; ok {
-		return true
-	}
-	return false
-}
-
-// isReact checks if a package.json indicates a React project.
-func isReact(pkg *packageJSON) bool {
-	// Check for common React frameworks.
-	hasReact := false
-	if _, ok := pkg.Dependencies["react"]; ok {
-		hasReact = true
-	}
-	if _, ok := pkg.DevDependencies["react"]; ok {
-		hasReact = true
-	}
-	if !hasReact {
-		return false
-	}
-
-	// Common CRA or Vite React projects have react-scripts or vite.
-	if _, ok := pkg.Dependencies["react-scripts"]; ok {
-		return true
-	}
-	if _, ok := pkg.DevDependencies["vite"]; ok {
-		return true
-	}
-	if _, ok := pkg.DevDependencies["@vitejs/plugin-react"]; ok {
-		return true
-	}
-	if _, ok := pkg.DevDependencies["react-scripts"]; ok {
-		return true
-	}
-
-	// If react is a dependency but no build tool is detected, it's likely
-	// a custom React project. Check for a build script.
-	if pkg.Scripts.Build != "" {
-		return true
-	}
-
-	return false
-}
-
-// defaultNodePort returns the default port for a Node.js project based on
-// common conventions.
-func defaultNodePort(pkg *packageJSON) int {
-	// Express projects often use a PORT env var, defaulting to 3000.
-	return 3000
-}
-
-// StartCommandWithPort replaces {port} placeholders in the start command
-// with the actual port number.
-func StartCommandWithPort(cmd string, port int) string {
-	portStr := fmtPort(port)
-	return strings.ReplaceAll(cmd, "{port}", portStr)
-}
-
-// fmtPort converts a port number to a string.
-func fmtPort(port int) string {
-	if port <= 0 {
-		return "8080"
-	}
-	return strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(
-		func() string { return fmtInt(port) }(),
-		"\n", ""), " ", ""))
-}
-
-func fmtInt(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	digits := make([]byte, 0, 10)
-	neg := false
-	if n < 0 {
-		neg = true
-		n = -n
-	}
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	if neg {
-		digits = append([]byte{'-'}, digits...)
-	}
-	return string(digits)
 }

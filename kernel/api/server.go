@@ -47,9 +47,12 @@ func NewServer(k *kernel.Kernel, addr string) *Server {
 	resHandler := NewResourceHandler(k.ResourceRegistry())
 	ctrlHandler := NewControllerHandler(k)
 	projHandler := NewProjectHandler(k)
+	wfHandler := NewWorkflowHandler(k.ResourceRegistry())
+	logHandler := NewLogHandler(k.ResourceRegistry(), k.RuntimeManager())
+	deployHandler := NewDeploymentHandler(k.ResourceRegistry())
 
 	mux := http.NewServeMux()
-	registerRoutes(mux, handler, capHandler, provHandler, resHandler, ctrlHandler, projHandler)
+	registerRoutes(mux, handler, capHandler, provHandler, resHandler, ctrlHandler, projHandler, wfHandler, logHandler, deployHandler)
 
 	// Build the middleware chain: outer → inner is RequestID → Recovery → Logging → mux.
 	var h http.Handler = mux
@@ -70,7 +73,7 @@ func NewServer(k *kernel.Kernel, addr string) *Server {
 }
 
 // registerRoutes maps URL paths to handler methods.
-func registerRoutes(mux *http.ServeMux, h *Handler, ch *CapabilityHandler, ph *ProviderHandler, rh *ResourceHandler, ctrlh *ControllerHandler, projh *ProjectHandler) {
+func registerRoutes(mux *http.ServeMux, h *Handler, ch *CapabilityHandler, ph *ProviderHandler, rh *ResourceHandler, ctrlh *ControllerHandler, projh *ProjectHandler, wfh *WorkflowHandler, lh *LogHandler, dh *DeploymentHandler) {
 	// --- System endpoints ---------------------------------------------------
 	mux.HandleFunc("GET /api/v1/health", h.Health)
 	mux.HandleFunc("GET /api/v1/ready", h.Ready)
@@ -105,6 +108,19 @@ func registerRoutes(mux *http.ServeMux, h *Handler, ch *CapabilityHandler, ph *P
 	mux.HandleFunc("GET /api/v1/projects/{id}", projh.GetProject)
 	mux.HandleFunc("PUT /api/v1/projects/{id}", projh.UpdateProject)
 	mux.HandleFunc("DELETE /api/v1/projects/{id}", projh.DeleteProject)
+
+	// --- Workflow Execution endpoints ------------------------------------
+	mux.HandleFunc("GET /api/v1/workflow-executions/{id}", wfh.GetExecution)
+	mux.HandleFunc("GET /api/v1/workflow-executions/{id}/events", wfh.StreamExecutionEvents)
+
+	// --- Application Log endpoints ---------------------------------------
+	mux.HandleFunc("GET /api/v1/applications/{id}/logs", lh.SnapshotLogs)
+	mux.HandleFunc("GET /api/v1/applications/{id}/logs/stream", lh.StreamLogs)
+	mux.HandleFunc("GET /api/v1/applications/{id}/logs/download", lh.DownloadLogs)
+
+	// --- Deployment Timeline / Comparison endpoints --------------------
+	mux.HandleFunc("GET /api/v1/applications/{id}/deployments/{number}/timeline", dh.Timeline)
+	mux.HandleFunc("GET /api/v1/applications/{id}/deployments/compare", dh.Compare)
 
 	// Catch-all for unmatched paths — returns our standard JSON 404.
 	mux.HandleFunc("/{path...}", func(w http.ResponseWriter, r *http.Request) {

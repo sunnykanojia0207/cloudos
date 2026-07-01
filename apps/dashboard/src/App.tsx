@@ -7,6 +7,8 @@ import { LoadingScreen } from '@/components/error/LoadingScreen';
 import { lazy, Suspense } from 'react';
 
 // Lazy-loaded pages for code splitting
+const ApplicationsPage = lazy(() => import('@/pages/ApplicationsPage'));
+const ApplicationDetailPage = lazy(() => import('@/pages/ApplicationDetailPage'));
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const KernelPage = lazy(() => import('@/pages/KernelPage'));
@@ -51,6 +53,22 @@ export default function App() {
               <Route element={<AppShell />}>
                 <Route
                   index
+                  element={
+                    <SuspenseWrapper>
+                      <ApplicationsPage />
+                    </SuspenseWrapper>
+                  }
+                />
+                <Route
+                  path="applications/:id"
+                  element={
+                    <SuspenseWrapper>
+                      <ApplicationDetailPage />
+                    </SuspenseWrapper>
+                  }
+                />
+                <Route
+                  path="dashboard"
                   element={
                     <SuspenseWrapper>
                       <DashboardPage />

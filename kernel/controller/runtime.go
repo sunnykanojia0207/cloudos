@@ -9,6 +9,7 @@ import (
 	"github.com/cloudos/cloudos/kernel/events"
 	"github.com/cloudos/cloudos/kernel/health"
 	"github.com/cloudos/cloudos/kernel/resource"
+	"github.com/cloudos/cloudos/kernel/safe"
 	"github.com/cloudos/cloudos/packages/logging"
 	"github.com/cloudos/cloudos/packages/types"
 )
@@ -169,9 +170,9 @@ func (m *Manager) startController(ctx context.Context, ctrl Controller) {
 	m.health[ctrl.Name()] = h
 	m.mu.Unlock()
 
-	// Run the reconcile loop in a goroutine.
-	go func() {
-		m.wg.Add(1)
+	// Run the reconcile loop in a goroutine with panic recovery.
+	m.wg.Add(1)
+	safe.Go(func() {
 		defer m.wg.Done()
 
 		// Immediate reconciliation of all existing resources on startup.
@@ -179,7 +180,7 @@ func (m *Manager) startController(ctx context.Context, ctrl Controller) {
 
 		// Then enter the event-driven loop.
 		m.reconcileLoop(ctx, ctrl)
-	}()
+	})
 
 	m.log.Info("controller started",
 		"name", ctrl.Name(),

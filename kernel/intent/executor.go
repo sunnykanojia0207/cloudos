@@ -3,9 +3,11 @@ package intent
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/cloudos/cloudos/kernel/application"
 	"github.com/cloudos/cloudos/kernel/controller"
 	"github.com/cloudos/cloudos/kernel/events"
 	"github.com/cloudos/cloudos/kernel/health"
@@ -178,6 +180,10 @@ func (ex *Executor) executeStep(ctx context.Context, step *ExecutionStep, result
 		return ex.execControllerReconcile(step)
 	case "health.check":
 		return ex.execHealthCheck(step, result)
+	case "application.create":
+		return ex.execApplicationCreate(step)
+	case "application.get":
+		return ex.execApplicationGet(step, result)
 	case "complete":
 		return nil
 	case "format":
@@ -203,6 +209,9 @@ func (ex *Executor) execValidate(step *ExecutionStep) error {
 			return fmt.Errorf("validation failed: %w", err)
 		}
 		step.Result = fmt.Sprintf("Project %q is valid", id)
+		return nil
+	case "Deploy":
+		step.Result = fmt.Sprintf("Deploy request for %q is valid", id)
 		return nil
 	default:
 		return fmt.Errorf("unknown kind for validation: %s", kind)
@@ -404,5 +413,96 @@ func (ex *Executor) execHealthCheck(step *ExecutionStep, result *IntentResult) e
 
 	step.Result = fmt.Sprintf("Checked %d components", len(report))
 	result.Summary = step.Result
+	return nil
+}
+
+// ── Application Actions (Natural Infrastructure) ───────────────────────────
+
+func (ex *Executor) execApplicationCreate(step *ExecutionStep) error {
+	parts := strings.SplitN(step.Target, ":", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid target format: %s", step.Target)
+	}
+	kind, id := parts[0], parts[1]
+	if kind != "Application" {
+		return fmt.Errorf("expected Application kind, got %q", kind)
+	}
+
+	// Check if Application already exists
+	existing, err := ex.resRegistry.Get("Application", id)
+	if err == nil && existing != nil {
+		step.Result = fmt.Sprintf("Application %q already exists (resource version: %d)", id, existing.GetMetadata().ResourceVersion)
+		return nil
+	}
+
+	// Build spec from step metadata or plan params (passed via step.Result as JSON later,
+	// for now use sensible defaults for git-based deployments)
+	spec := application.ApplicationSpec{
+		Source: application.ApplicationSource{
+			Type:   application.SourceGit,
+			URL:    "https://github.com/cloudos/sample-app",
+			Branch: "main",
+		},
+		Runtime: application.ApplicationRuntime{
+			Type:    application.RuntimeNode,
+			Port:    3000,
+			Command: "npm start",
+		},
+		Deployment: application.ApplicationDeployment{
+			Port:     3000,
+			Replicas: 1,
+		},
+		Environment: map[string]string{},
+		Settings:    map[string]string{},
+	}
+
+	app := application.NewApplication(id, id, spec)
+	app.EnsureDefaults()
+
+	if err := ex.resRegistry.Create(context.Background(), app); err != nil {
+		return fmt.Errorf("create application: %w", err)
+	}
+
+	step.Result = fmt.Sprintf("Application %q created (namespace: %s, runtime: %s)", id, app.Metadata_.Namespace, spec.Runtime.Type)
+	return nil
+}
+
+func (ex *Executor) execApplicationGet(step *ExecutionStep, result *IntentResult) error {
+	parts := strings.SplitN(step.Target, ":", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid target format: %s", step.Target)
+	}
+	kind, id := parts[0], parts[1]
+	if kind != "Application" {
+		return fmt.Errorf("expected Application kind, got %q", kind)
+	}
+
+	res, err := ex.resRegistry.Get("Application", id)
+	if err != nil {
+		return fmt.Errorf("get application %q: %w", id, err)
+	}
+
+	app, ok := res.(*application.Application)
+	if !ok {
+		return fmt.Errorf("expected *application.Application, got %T", res)
+	}
+
+	// Report status
+	url := app.Status_.URL
+	if url == "" {
+		url = "pending (controller will assign after reconciliation)"
+	}
+
+	phase := app.Status_.Phase
+	health := app.Status_.Health
+	replicas := strconv.Itoa(app.Spec_.Deployment.Replicas)
+
+	result.Details = append(result.Details, ResultItem{
+		Message: fmt.Sprintf("Application %q — Phase: %s, Health: %s", id, phase, health),
+		Type:    "success",
+		Detail:  fmt.Sprintf("Runtime: %s, Replicas: %s, URL: %s", app.Spec_.Runtime.Type, replicas, url),
+	})
+
+	step.Result = fmt.Sprintf("Application %q: phase=%s health=%s url=%s", id, phase, health, url)
 	return nil
 }

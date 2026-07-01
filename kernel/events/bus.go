@@ -7,6 +7,7 @@ package events
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -89,7 +90,26 @@ func (b *Bus) Publish(ctx context.Context, event Event) {
 	}
 
 	for _, h := range handlers {
-		h(ctx, event)
+		// Recover from handler panics so a single misbehaving handler
+		// does not crash the publisher goroutine or prevent other
+		// handlers from receiving the event.
+		func(handler Handler) {
+			defer func() {
+				if r := recover(); r != nil {
+					// Use the bus's logger if available, otherwise fall back
+					// to a package-level recovery that won't crash.
+					if b.log != nil {
+						b.log.Error("event handler panic",
+							"event_type", event.Type,
+							"source", event.Source,
+							"panic", fmt.Sprintf("%v", r),
+							"stack", string(debug.Stack()),
+						)
+					}
+				}
+			}()
+			handler(ctx, event)
+		}(h)
 	}
 }
 

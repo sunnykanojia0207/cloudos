@@ -36,6 +36,10 @@ const (
 	// Kind is the resource kind string for Application.
 	Kind = "Application"
 
+	// DeploymentHistoryMax is the maximum number of deployment reports
+	// retained in ApplicationStatus.DeploymentHistory.
+	DeploymentHistoryMax = 20
+
 	// Source types.
 	SourceGit   = "git"
 	SourceLocal = "local"
@@ -239,11 +243,110 @@ type ApplicationStatus struct {
 	// DeploymentCount is the total number of deployments.
 	DeploymentCount int `json:"deploymentCount"`
 
+	// DeploymentHistory is the ordered list of deployment reports, most
+	// recent first (index 0 = latest). Each report captures the full
+	// deployment story: repository, detected runtime, buildpack, build
+	// time, runtime, endpoint, health, logs, and diagnostics.
+	//
+	// Capped at DeploymentHistoryMax entries. Oldest entries are pruned.
+	//
+	// LastReport is a convenience pointer to the most recent report
+	// (equivalent to DeploymentHistory[0] when non-empty).
+	DeploymentHistory []DeploymentReport `json:"deploymentHistory,omitempty"`
+
+	// LastReport is the structured deployment report from the most recent
+	// deployment. Populated by the controller when a deployment completes.
+	// It is always DeploymentHistory[0] when history is non-empty.
+	LastReport *DeploymentReport `json:"lastReport,omitempty"`
+
 	// CreatedAt is when the application was created.
 	CreatedAt time.Time `json:"createdAt,omitempty"`
 
 	// UpdatedAt is when the application was last modified.
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
+}
+
+// ── DeploymentReport ────────────────────────────────────────────────────────
+
+// DeploymentReport is the structured story of a single deployment. It captures
+// every stage from repository to running application, providing full visibility
+// into what happened, how long it took, and where the app is running.
+//
+// This is the primary output users see after "cloudos deploy". It answers the
+// question: "What happened?" with a single structured response.
+//
+// Populated by the Application Controller when a deployment workflow completes.
+// Extended by the Executor when runtimes pass back structured metadata.
+type DeploymentReport struct {
+	// DeploymentNumber is the sequential deployment number for this application.
+	// Starts at 1 for the first deployment.
+	DeploymentNumber int `json:"deploymentNumber"`
+
+	// StartedAt is when the deployment workflow was submitted.
+	StartedAt time.Time `json:"startedAt"`
+
+	// CompletedAt is when the deployment workflow reached a terminal phase.
+	CompletedAt time.Time `json:"completedAt"`
+
+	// Duration is a human-readable duration string (e.g. "8.2s").
+	Duration string `json:"duration"`
+
+	// Repository is the source repository URL.
+	Repository string `json:"repository"`
+
+	// Branch is the git branch deployed.
+	Branch string `json:"branch"`
+
+	// CommitSHA is the short commit hash deployed (e.g. "7f41ab2").
+	// Populated from the source clone result when available.
+	CommitSHA string `json:"commitSha,omitempty"`
+
+	// DetectedRuntime is what the buildpack detected (e.g. "Go 1.24", "Node 20").
+	DetectedRuntime string `json:"detectedRuntime,omitempty"`
+
+	// Buildpack is the name of the buildpack that handled this deployment.
+	Buildpack string `json:"buildpack,omitempty"`
+
+	// BuildSuccess indicates whether the build phase completed successfully.
+	BuildSuccess bool `json:"buildSuccess"`
+
+	// RuntimeName is the name of the runtime that executed the application.
+	RuntimeName string `json:"runtimeName,omitempty"`
+
+	// RuntimeVersion is the API version of the runtime contract used.
+	RuntimeVersion string `json:"runtimeVersion,omitempty"`
+
+	// Environment labels the deployment environment (e.g. "local", "docker",
+	// "production", "staging"). Inferred from the runtime type and labels.
+	Environment string `json:"environment,omitempty"`
+
+	// ArtifactType describes the build output type (e.g. "Go Binary",
+	// "React Bundle", "Static HTML").
+	ArtifactType string `json:"artifactType,omitempty"`
+
+	// ArtifactSize is the size of the build artifact in bytes.
+	ArtifactSize int64 `json:"artifactSize,omitempty"`
+
+	// WorkflowID is the ID of the workflow execution for this deployment.
+	WorkflowID string `json:"workflowId"`
+
+	// WorkflowSteps is the total number of steps in the deployment workflow.
+	WorkflowSteps int `json:"workflowSteps"`
+
+	// HealthStatus is the health check result ("Healthy", "Degraded", "Error").
+	HealthStatus string `json:"healthStatus"`
+
+	// Endpoint is the URL where the application is accessible.
+	Endpoint string `json:"endpoint"`
+
+	// LogLineCount is the number of log lines available from this deployment.
+	LogLineCount int `json:"logLineCount,omitempty"`
+
+	// Warnings from the deployment process (non-fatal issues).
+	Warnings []string `json:"warnings,omitempty"`
+
+	// Errors from the deployment process (fatal issues, if deployment failed).
+	Errors []string `json:"errors,omitempty"`
 }
 
 // ── Application Resource ───────────────────────────────────────────────────

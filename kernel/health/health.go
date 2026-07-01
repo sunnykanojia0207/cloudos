@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudos/cloudos/kernel/safe"
 	"github.com/cloudos/cloudos/packages/logging"
 	"github.com/cloudos/cloudos/packages/types"
 )
@@ -80,7 +81,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	// Run an immediate check, then every 30 seconds.
 	m.runChecks(ctx)
 
-	go func() {
+	safe.Go(func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
@@ -92,7 +93,7 @@ func (m *Manager) Start(ctx context.Context) error {
 				return
 			}
 		}
-	}()
+	})
 
 	m.log.Info("health manager started")
 	return nil

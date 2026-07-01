@@ -62,7 +62,12 @@ func NewIntentEngine(
 	}
 }
 
-// Submit processes a user input string through the full intent pipeline
+// Submit processes a user input string through the first two phases:
+// Parse → Plan. It returns a preview (PlanPreview) with the intent and plan
+// in "awaiting_approval" status. The user must call Confirm() to execute.
+//
+// This implements Explain Mode / Trust layer: users see what CloudOS will
+// do before it does it.
 func (ie *IntentEngine) Submit(ctx context.Context, input string) (*Intent, error) {
 	id := ie.nextID()
 
@@ -112,9 +117,10 @@ func (ie *IntentEngine) Submit(ctx context.Context, input string) (*Intent, erro
 		})
 		return intent, nil
 	}
-	plan.Status = IntentPending
+	plan.Status = IntentAwaitingApproval
 
 	intent.PlanID = plan.ID
+	intent.Status = IntentAwaitingApproval
 
 	ie.mu.Lock()
 	ie.plans[plan.ID] = plan
@@ -124,10 +130,43 @@ func (ie *IntentEngine) Submit(ctx context.Context, input string) (*Intent, erro
 		"intent_id": id,
 		"plan_id":   plan.ID,
 		"steps":     len(plan.Steps),
+		"preview":   plan.Preview,
 	})
 
-	// Phase 3: Execute (async)
+	// Execution is NOT started — user sees preview and confirms
+	ie.log.Info("intent awaiting approval", "id", id, "plan_id", plan.ID, "preview_summary", plan.Preview.Summary)
+
+	return intent, nil
+}
+
+// Confirm approves and executes a previously submitted intent's plan.
+// Only intents in "awaiting_approval" status can be confirmed.
+func (ie *IntentEngine) Confirm(ctx context.Context, intentID string) (*Intent, error) {
+	ie.mu.RLock()
+	intent, ok := ie.intents[intentID]
+	ie.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("intent %q not found", intentID)
+	}
+
+	if intent.Status != IntentAwaitingApproval {
+		return nil, fmt.Errorf("intent %q status is %q, expected %q", intentID, intent.Status, IntentAwaitingApproval)
+	}
+
+	plan, ok := ie.GetPlan(intent.PlanID)
+	if !ok {
+		return nil, fmt.Errorf("plan %q for intent %q not found", intent.PlanID, intentID)
+	}
+
+	ie.log.Info("intent confirmed", "id", intentID, "plan_id", plan.ID)
+	ie.publishEvent("intent.confirmed", map[string]interface{}{
+		"intent_id": intentID,
+		"plan_id":   plan.ID,
+	})
+
+	// Execute (async)
 	intent.Status = IntentExecuting
+	plan.Status = IntentPending
 	go ie.executePlan(ctx, intent, plan)
 
 	return intent, nil

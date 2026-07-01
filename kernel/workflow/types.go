@@ -21,6 +21,13 @@ import (
 	"time"
 )
 
+// ── API Version ─────────────────────────────────────────────────────────────
+//
+// WorkflowAPIVersion is the frozen version of the Workflow API.
+// Per ADR-0011, this contract is declared v1.0 and will only receive
+// additive extensions via optional interfaces.
+const WorkflowAPIVersion = "workflow.cloudos.io/v1"
+
 // ── Status Enums ─────────────────────────────────────────────────────────
 
 // WorkflowStatus represents the lifecycle state of a WorkflowRun.

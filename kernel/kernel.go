@@ -22,7 +22,9 @@ import (
 	"github.com/cloudos/cloudos/kernel/health"
 	"github.com/cloudos/cloudos/kernel/lifecycle"
 	"github.com/cloudos/cloudos/kernel/project"
+	cr "github.com/cloudos/cloudos/kernel/runtime"
 	"github.com/cloudos/cloudos/kernel/runtime/local"
+	"github.com/cloudos/cloudos/kernel/safe"
 	"github.com/cloudos/cloudos/kernel/source"
 	"github.com/cloudos/cloudos/kernel/registry"
 	"github.com/cloudos/cloudos/kernel/resource"
@@ -55,6 +57,7 @@ type Kernel struct {
 	resRegistry         *resource.Registry
 	ctrlManager         *controller.Manager
 	container           *di.Container
+	runtimeManager      cr.Runtime
 
 	// Lifecycle.
 	startedAt time.Time
@@ -73,6 +76,10 @@ type Config struct {
 func New(cfg config.Config) (*Kernel, error) {
 	logLevel := logging.ParseLevel(cfg.Kernel.LogLevel)
 	log := logging.NewSubsystemLogger("kernel", logLevel)
+
+	// Wire up panic-safe goroutine execution with the kernel's logger
+	// so any recovered panics are logged via the structured pipeline.
+	safe.SetLogger(log)
 
 	_, cancel := context.WithCancel(context.Background())
 
@@ -248,6 +255,7 @@ func (k *Kernel) Boot(ctx context.Context) error {
 			// for the deployment workflow pipeline.
 			sourceCloner := source.NewGitCloner(k.cfg.Kernel.DataDir)
 			runtimeMgr := local.NewManager(k.cfg.Kernel.DataDir, k.log)
+			k.runtimeManager = runtimeMgr
 			k.log.Info("source cloner and runtime manager created",
 				"workDir", k.cfg.Kernel.DataDir,
 			)
@@ -386,6 +394,9 @@ func (k *Kernel) ProviderDescriptorRegistry() *providers.Registry { return k.pro
 
 // ResourceRegistry returns the resource engine registry.
 func (k *Kernel) ResourceRegistry() *resource.Registry { return k.resRegistry }
+
+// RuntimeManager returns the active runtime manager for application execution.
+func (k *Kernel) RuntimeManager() cr.Runtime { return k.runtimeManager }
 
 // ControllerManager returns the controller runtime manager.
 func (k *Kernel) ControllerManager() *controller.Manager { return k.ctrlManager }

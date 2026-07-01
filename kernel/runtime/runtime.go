@@ -27,16 +27,47 @@
 //	      └── ...
 //
 // Every Runtime implementation provides:
-//   - Start / Stop / Restart lifecycle
+//   - Prepare / Start / Stop / Restart / Destroy lifecycle
 //   - Health checking with configurable policy
-//   - Log capture via LogManager
-//   - Process listing and inspection
+//   - Log capture and streaming
+//   - Metrics collection
+//
+// Compatibility Promise (see ADR-0008):
+//   - The Runtime interface is the only supported execution contract
+//   - Workflows never call Docker, SSH, Kubernetes, or processes directly
+//   - Controllers never manage processes directly
+//   - Buildpacks never start applications
+//   - Runtimes never modify source code
 package runtime
 
 import (
 	"context"
 	"io"
 	"time"
+)
+
+// ── API Version ─────────────────────────────────────────────────────────────
+//
+// RuntimeAPIVersion is the frozen version of the Runtime interface.
+// Per ADR-0011, this contract is declared v1.0 and will only receive
+// additive extensions via optional interfaces.
+//
+// Every Runtime implementation declares which API version it implements.
+// The certification harness validates that declaration matches reality.
+//
+//	const APIVersion = runtime.RuntimeAPIVersion
+const RuntimeAPIVersion = "runtime.cloudos.io/v1"
+
+// ── Runtime Type ────────────────────────────────────────────────────────────
+
+// RuntimeType categorizes Runtime implementations.
+type RuntimeType string
+
+const (
+	RuntimeTypeLocal      RuntimeType = "local"
+	RuntimeTypeDocker     RuntimeType = "docker"
+	RuntimeTypeSSH        RuntimeType = "ssh"
+	RuntimeTypeKubernetes RuntimeType = "kubernetes"
 )
 
 // ── Runtime Status ─────────────────────────────────────────────────────────
@@ -59,43 +90,65 @@ const (
 // Runtime is the interface for executing and managing application workloads.
 //
 // Implementations must be safe for concurrent use.
+//
+// Lifecycle:
+//
+//	Prepare(ctx, req) → PreparedApplication  (validate, allocate resources)
+//	Start(ctx, app)    → RunningInstance      (launch the process)
+//	Stop(ctx, id)      → error               (graceful shutdown)
+//	Restart(ctx, id)   → error               (stop + start)
+//	Destroy(ctx, id)   → error               (stop + release all resources)
 type Runtime interface {
-	// Name returns the runtime name (e.g. "local", "docker", "k8s").
+	// Identity
 	Name() string
+	Type() RuntimeType
 
-	// Start launches an application instance and returns immediately once
-	// the process has been started (not necessarily when it's healthy).
-	Start(ctx context.Context, config StartConfig) (*RunningInstance, error)
+	// ── Lifecycle ────────────────────────────────────────────────────────
+
+	// Prepare validates the request, allocates resources (ports, directories),
+	// and returns a PreparedApplication — an immutable descriptor of what
+	// will run. The PreparedApplication is then passed to Start().
+	Prepare(ctx context.Context, req *PrepareRequest) (*PreparedApplication, error)
+
+	// Start launches an application instance from a PreparedApplication and
+	// returns immediately once the process has been started (not necessarily
+	// when it's healthy).
+	Start(ctx context.Context, app *PreparedApplication) (*RunningInstance, error)
 
 	// Stop terminates a running instance by ID. It should attempt a
 	// graceful shutdown before force-killing. Returns an error if the
 	// instance is not found.
-	Stop(ctx context.Context, id string) error
+	Stop(ctx context.Context, instanceID string) error
 
 	// Restart stops and re-starts an instance.
-	Restart(ctx context.Context, id string) error
+	Restart(ctx context.Context, instanceID string) error
 
-	// List returns all managed instances.
-	List(ctx context.Context) ([]RunningInstance, error)
+	// Destroy stops the instance and releases all associated resources
+	// (ports, directories, network connections). After Destroy, the
+	// instance ID is no longer valid.
+	Destroy(ctx context.Context, instanceID string) error
 
-	// Get returns a single instance by ID, or nil if not found.
-	Get(ctx context.Context, id string) (*RunningInstance, error)
+	// ── Observability ───────────────────────────────────────────────────
 
 	// Health returns the health status of a specific instance.
 	// Returns a HealthReport with the current state, or an error if
 	// the instance is not found.
-	Health(ctx context.Context, id string) (*HealthReport, error)
+	Health(ctx context.Context, instanceID string) (*HealthReport, error)
 
-	// Logs returns a LogReader for streaming logs from an instance.
-	// The reader should follow the io.Reader pattern, returning new
-	// log data as it becomes available.
-	Logs(ctx context.Context, id string) (LogReader, error)
+	// Logs returns a LogStream for streaming logs from an instance.
+	// Use LogOptions to control tail count, follow behavior, and
+	// source filtering.
+	Logs(ctx context.Context, instanceID string, opts LogOptions) (LogStream, error)
+
+	// Metrics returns performance metrics for a running instance.
+	Metrics(ctx context.Context, instanceID string) (*Metrics, error)
 }
 
-// ── StartConfig ────────────────────────────────────────────────────────────
+// ── PrepareRequest ─────────────────────────────────────────────────────────
 
-// StartConfig contains all parameters needed to start an application instance.
-type StartConfig struct {
+// PrepareRequest contains all parameters needed to prepare an application
+// for execution. This is the input to Runtime.Prepare().
+type PrepareRequest struct {
 	// AppID is the CloudOS Application identifier.
 	AppID string
 
@@ -118,9 +171,68 @@ type StartConfig struct {
 	// EnvVars are environment variables for the application process.
 	EnvVars map[string]string
 
-	// HealthPolicy defines how health checks should be performed.
+	// HealthCheck defines how health checks should be performed.
 	// If nil, a default policy is used.
-	HealthPolicy *HealthPolicy
+	HealthCheck *HealthPolicy
+
+	// Labels are arbitrary key-value metadata attached to the instance.
+	Labels map[string]string
+
+	// Artifact references an optional build artifact. When set, the runtime
+	// uses this artifact instead of the WorkDir for execution.
+	Artifact *ArtifactRef
+}
+
+// ── PreparedApplication ────────────────────────────────────────────────────
+
+// PreparedApplication is the immutable result of Runtime.Prepare().
+// It describes everything needed to start the application process.
+//
+// A PreparedApplication is passed to Runtime.Start(). It should be treated
+// as immutable once created.
+type PreparedApplication struct {
+	// ID is a unique identifier for this prepared application instance.
+	ID string
+
+	// AppID is the CloudOS Application ID this instance belongs to.
+	AppID string
+
+	// WorkDir is the working directory for the application process.
+	WorkDir string
+
+	// Command is the command to execute.
+	Command string
+
+	// Args are additional arguments to the command.
+	Args []string
+
+	// Port is the allocated port number (0 if not applicable).
+	Port int
+
+	// EnvVars are environment variables for the process.
+	EnvVars map[string]string
+
+	// Labels are arbitrary key-value metadata.
+	Labels map[string]string
+
+	// Artifact references the optional build artifact used for execution.
+	Artifact *ArtifactRef
+}
+
+// ── ArtifactRef ────────────────────────────────────────────────────────────
+
+// ArtifactRef references a build artifact. This is how Buildpacks pass
+// their output to Runtimes without the Runtime needing to know how the
+// artifact was produced.
+type ArtifactRef struct {
+	// Type is the artifact type (e.g. "binary", "static", "container").
+	Type string `json:"type"`
+
+	// Path is the filesystem path to the artifact.
+	Path string `json:"path"`
+
+	// Hash is a content hash for integrity verification.
+	Hash string `json:"hash,omitempty"`
 }
 
 // ── RunningInstance ────────────────────────────────────────────────────────
@@ -184,10 +296,57 @@ type HealthReport struct {
 	StatusCode int `json:"statusCode,omitempty"`
 }
 
-// ── Log Reader ─────────────────────────────────────────────────────────────
+// ── Metrics ────────────────────────────────────────────────────────────────
 
-// LogReader provides access to application logs.
-// It combines read, historical, and streaming access.
+// Metrics contains performance metrics for a running instance.
+type Metrics struct {
+	// CPUUsage is CPU usage as a percentage (0-100).
+	CPUUsage float64 `json:"cpuUsage"`
+
+	// MemoryUsage is memory usage in bytes.
+	MemoryUsage int64 `json:"memoryUsage"`
+
+	// Uptime is how long the instance has been running.
+	Uptime time.Duration `json:"uptime"`
+
+	// Timestamp is when these metrics were collected.
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// ── Log Options ────────────────────────────────────────────────────────────
+
+// LogOptions configures how logs are retrieved from a running instance.
+type LogOptions struct {
+	// Tail is the number of recent log lines to include in the initial
+	// response. If <= 0, no historical lines are returned.
+	Tail int
+
+	// Follow, when true, streams new log lines as they are produced.
+	Follow bool
+
+	// Source filters by log source ("stdout", "stderr", or "" for both).
+	Source string
+}
+
+// ── LogStream ──────────────────────────────────────────────────────────────
+
+// LogStream provides access to streaming application logs.
+// Create one via Runtime.Logs().
+type LogStream interface {
+	// Lines returns a channel that receives log entries as they become
+	// available. The channel is closed when the log source is exhausted
+	// or the stream is closed via Close().
+	Lines() <-chan LogEntry
+
+	// Close releases any resources held by the stream.
+	Close() error
+}
+
+// ── Log Reader (Internal) ──────────────────────────────────────────────────
+
+// LogReader provides access to application logs with read, historical,
+// and streaming access. It is used internally by runtimes and the
+// LogManager. The public API uses LogStream.
 type LogReader interface {
 	io.Reader
 

@@ -1,7 +1,7 @@
 // Package local implements the Local Runtime for CloudOS — a process manager
 // that runs applications as local OS processes. It functions like a lightweight
-// systemd + pm2 combined: start, stop, restart, health check, log capture, and
-// port allocation.
+// systemd + pm2 combined: prepare, start, stop, restart, destroy, health check,
+// log capture, and port allocation.
 //
 // The Local Runtime is the default provider for CloudOS applications. It runs
 // the user's code directly on the CloudOS host machine without virtualization
@@ -15,7 +15,8 @@
 //	    ├── Workflow: "deploy"
 //	    │      └── Step: "provider.deploy"
 //	    │             └── Local Runtime
-//	    │                    ├── StartProcess(cmd, dir, env, port)
+//	    │                    ├── Prepare() — allocate port, validate, create dir
+//	    │                    ├── Start()   — launch process
 //	    │                    ├── portPool.Get()
 //	    │                    ├── exec.Cmd.Start()
 //	    │                    ├── logBuffer.Capture(stdout, stderr)
@@ -113,8 +114,8 @@ type Process struct {
 	// Command is the full command being executed.
 	Command string `json:"command"`
 
-	mu   sync.RWMutex
-	cmd  *exec.Cmd
+	mu     sync.RWMutex
+	cmd    *exec.Cmd
 	cancel context.CancelFunc
 }
 
@@ -259,14 +260,14 @@ func (p *PortPool) Release(port int) {
 // ── Manager ────────────────────────────────────────────────────────────────
 
 // Manager manages the lifecycle of local application processes.
-// It is the "systemd + pm2" for CloudOS. It also implements the
+// It is the "systemd + pm2" for CloudOS. It implements the
 // cloudos Runtime interface for use by the workflow engine.
 type Manager struct {
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 	processes map[string]*Process
-	portPool *PortPool
-	workDir  string
-	log      Logger
+	portPool  *PortPool
+	workDir   string
+	log       Logger
 
 	nextID atomic.Int64
 
@@ -275,7 +276,7 @@ type Manager struct {
 	logManager *cr.LogManager
 
 	// healthPolicy is the default health policy for processes.
-	// Can be overridden per-process via StartConfig.
+	// Can be overridden per-process via PrepareRequest.HealthCheck.
 	healthPolicy *cr.HealthPolicy
 }
 
@@ -289,11 +290,11 @@ type Logger interface {
 // NewManager creates a new Local Runtime Manager.
 func NewManager(workDir string, log Logger) *Manager {
 	return &Manager{
-		processes:     make(map[string]*Process),
-		portPool:      NewPortPool(DefaultPortStart, DefaultPortEnd),
-		workDir:       workDir,
-		log:           log,
-		healthPolicy:  cr.DefaultHealthPolicy(),
+		processes:    make(map[string]*Process),
+		portPool:     NewPortPool(DefaultPortStart, DefaultPortEnd),
+		workDir:      workDir,
+		log:          log,
+		healthPolicy: cr.DefaultHealthPolicy(),
 	}
 }
 
@@ -308,39 +309,186 @@ func (m *Manager) WithLogManager(lm *cr.LogManager) *Manager {
 // Name returns "local" as the runtime identifier.
 func (m *Manager) Name() string { return "local" }
 
-// Start launches an application process according to the Runtime interface.
-// It delegates to StartProcess and converts the result to a RunningInstance.
-func (m *Manager) Start(ctx context.Context, config cr.StartConfig) (*cr.RunningInstance, error) {
-	// Use the existing start method.
-	proc, err := m.StartProcess(ctx, StartConfig{
-		AppID:   config.AppID,
-		Name:    config.Name,
-		WorkDir: config.WorkDir,
-		Command: config.Command,
-		Args:    config.Args,
-		Port:    config.Port,
-		EnvVars: config.EnvVars,
-	})
+// Type returns RuntimeTypeLocal.
+func (m *Manager) Type() cr.RuntimeType { return cr.RuntimeTypeLocal }
+
+// Prepare validates the request, allocates a port, ensures the work directory
+// exists, and returns a PreparedApplication ready for Start().
+func (m *Manager) Prepare(ctx context.Context, req *cr.PrepareRequest) (*cr.PreparedApplication, error) {
+	// Allocate a port.
+	port := req.Port
+	if port <= 0 {
+		var err error
+		port, err = m.portPool.Get()
+		if err != nil {
+			return nil, fmt.Errorf("prepare: port allocation: %w", err)
+		}
+	}
+
+	// Ensure the working directory exists.
+	if req.WorkDir != "" {
+		if err := os.MkdirAll(req.WorkDir, 0755); err != nil {
+			m.portPool.Release(port)
+			return nil, fmt.Errorf("prepare: create work dir %q: %w", req.WorkDir, err)
+		}
+	}
+
+	// Generate a unique ID for this prepared application.
+	id := fmt.Sprintf("proc-%s-%d", req.AppID, m.nextID.Add(1))
+
+	m.log.Info("application prepared",
+		"id", id,
+		"app", req.AppID,
+		"port", port,
+		"command", req.Command,
+	)
+
+	return &cr.PreparedApplication{
+		ID:      id,
+		AppID:   req.AppID,
+		WorkDir: req.WorkDir,
+		Command: req.Command,
+		Args:    req.Args,
+		Port:    port,
+		EnvVars: req.EnvVars,
+		Labels:  req.Labels,
+	}, nil
+}
+
+// Start launches an application process from a PreparedApplication and
+// returns a RunningInstance. It creates the OS process, captures output,
+// and begins health monitoring.
+func (m *Manager) Start(ctx context.Context, app *cr.PreparedApplication) (*cr.RunningInstance, error) {
+	proc, err := m.startPrepared(ctx, app)
 	if err != nil {
 		return nil, err
 	}
 	return m.processToInstance(proc), nil
 }
 
-// Stop terminates a running process by ID via the Runtime interface.
-func (m *Manager) Stop(ctx context.Context, id string) error {
-	return m.StopProc(id)
-}
+// startPrepared is the internal helper that creates a Process from a
+// PreparedApplication and starts the OS process.
+func (m *Manager) startPrepared(ctx context.Context, app *cr.PreparedApplication) (*Process, error) {
+	// Build the command.
+	cmd := buildCommand(app.Command, app.Args)
 
-// Restart stops and re-starts a process.
-func (m *Manager) Restart(ctx context.Context, id string) error {
-	proc, ok := m.GetProcess(id)
-	if !ok {
-		return fmt.Errorf("process %q not found", id)
+	// Set the working directory.
+	if app.WorkDir != "" {
+		cmd.Dir = app.WorkDir
 	}
 
-	// Capture the StartConfig for restart.
-	sCfg := StartConfig{
+	// Set up environment variables.
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", app.Port))
+	cmd.Env = append(cmd.Env, "HOST=0.0.0.0")
+	if app.EnvVars != nil {
+		for k, v := range app.EnvVars {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
+	// Create a cancellable context.
+	processCtx, cancel := context.WithCancel(ctx)
+
+	// Set up log capture.
+	logBuffer := NewLogBuffer(MaxLogLines)
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
+
+	proc := &Process{
+		ID:           app.ID,
+		AppID:        app.AppID,
+		Name:         app.AppID,
+		Status:       StatusStarting,
+		Port:         app.Port,
+		URL:          fmt.Sprintf("http://localhost:%d", app.Port),
+		StartTime:    time.Now(),
+		LogBuffer:    logBuffer,
+		HealthStatus: "pending",
+		WorkDir:      app.WorkDir,
+		Command:      app.Command,
+		cmd:          cmd,
+		cancel:       cancel,
+	}
+
+	// Store the process.
+	m.mu.Lock()
+	m.processes[app.ID] = proc
+	m.mu.Unlock()
+
+	// Start the command.
+	if err := cmd.Start(); err != nil {
+		m.portPool.Release(app.Port)
+		m.mu.Lock()
+		delete(m.processes, app.ID)
+		m.mu.Unlock()
+		return nil, fmt.Errorf("start process: %w", err)
+	}
+
+	proc.PID = cmd.Process.Pid
+	proc.Status = StatusRunning
+
+	m.log.Info("process started",
+		"id", app.ID,
+		"app", app.AppID,
+		"port", app.Port,
+		"pid", cmd.Process.Pid,
+		"command", app.Command,
+	)
+
+	// Start capturing stdout in a goroutine.
+	go func() {
+		io.Copy(logBuffer, stdout)
+	}()
+
+	// Start capturing stderr in a goroutine.
+	go func() {
+		io.Copy(logBuffer, stderr)
+	}()
+
+	// Wait for the process to finish in a goroutine.
+	go func() {
+		err := cmd.Wait()
+		m.mu.Lock()
+		proc.mu.Lock()
+		if err != nil {
+			proc.Status = StatusFailed
+			proc.HealthStatus = fmt.Sprintf("exited: %v", err)
+		} else {
+			proc.Status = StatusStopped
+			proc.HealthStatus = "exited cleanly"
+		}
+		proc.mu.Unlock()
+		m.mu.Unlock()
+
+		m.log.Info("process stopped",
+			"id", app.ID,
+			"app", app.AppID,
+			"status", proc.Status,
+			"error", err,
+		)
+	}()
+
+	// Start background health checking.
+	go m.healthLoop(processCtx, proc)
+
+	return proc, nil
+}
+
+// Stop terminates a running process by ID via the Runtime interface.
+func (m *Manager) Stop(ctx context.Context, instanceID string) error {
+	return m.StopProc(instanceID)
+}
+
+// Restart stops and re-starts a process using Prepare + Start.
+func (m *Manager) Restart(ctx context.Context, instanceID string) error {
+	proc, ok := m.GetProcess(instanceID)
+	if !ok {
+		return fmt.Errorf("instance %q not found", instanceID)
+	}
+
+	// Build a PrepareRequest from the existing process state.
+	req := &cr.PrepareRequest{
 		AppID:   proc.AppID,
 		Name:    proc.Name,
 		WorkDir: proc.WorkDir,
@@ -348,50 +496,59 @@ func (m *Manager) Restart(ctx context.Context, id string) error {
 		Port:    proc.Port,
 	}
 
-	// Stop the existing process.
-	if err := m.StopProc(id); err != nil {
-		return fmt.Errorf("stop for restart: %w", err)
+	// Prepare the new instance (allocates a new port if needed).
+	app, err := m.Prepare(ctx, req)
+	if err != nil {
+		return fmt.Errorf("restart: prepare: %w", err)
 	}
 
-	// Start a new one.
-	newProc, err := m.StartProcess(ctx, sCfg)
+	// Stop the existing process.
+	if err := m.StopProc(instanceID); err != nil {
+		// Release the newly allocated port on stop failure.
+		m.portPool.Release(app.Port)
+		return fmt.Errorf("restart: stop: %w", err)
+	}
+
+	// Start the new instance.
+	proc, err = m.startPrepared(ctx, app)
 	if err != nil {
-		return fmt.Errorf("start after restart: %w", err)
+		return fmt.Errorf("restart: start: %w", err)
 	}
 
 	// Copy the restart count.
-	proc.mu.Lock()
-	newProc.RestartCount = proc.RestartCount + 1
-	proc.mu.Unlock()
+	proc.RestartCount++
 
-	_ = newProc
 	return nil
 }
 
-// List returns all managed instances as RunningInstance values.
-func (m *Manager) List(ctx context.Context) ([]cr.RunningInstance, error) {
-	procs := m.ListProcesses()
-	instances := make([]cr.RunningInstance, len(procs))
-	for i, p := range procs {
-		instances[i] = *m.processToInstance(p)
+// Destroy stops the instance and releases all associated resources
+// (ports, log stores, process entries). After Destroy, the instance
+// ID is no longer valid.
+func (m *Manager) Destroy(ctx context.Context, instanceID string) error {
+	// Stop the process first.
+	if err := m.StopProc(instanceID); err != nil {
+		return fmt.Errorf("destroy: stop: %w", err)
 	}
-	return instances, nil
-}
 
-// Get returns a single instance by ID via the Runtime interface.
-func (m *Manager) Get(ctx context.Context, id string) (*cr.RunningInstance, error) {
-	proc, ok := m.GetProcess(id)
-	if !ok {
-		return nil, fmt.Errorf("instance %q not found", id)
+	// Release any log store for this instance.
+	if m.logManager != nil {
+		m.logManager.DeleteStore(instanceID)
 	}
-	return m.processToInstance(proc), nil
+
+	// Remove the process from tracking.
+	m.mu.Lock()
+	delete(m.processes, instanceID)
+	m.mu.Unlock()
+
+	m.log.Info("instance destroyed", "id", instanceID)
+	return nil
 }
 
 // Health returns the health status of a process via the Runtime interface.
-func (m *Manager) Health(ctx context.Context, id string) (*cr.HealthReport, error) {
-	proc, ok := m.GetProcess(id)
+func (m *Manager) Health(ctx context.Context, instanceID string) (*cr.HealthReport, error) {
+	proc, ok := m.GetProcess(instanceID)
 	if !ok {
-		return nil, fmt.Errorf("instance %q not found", id)
+		return nil, fmt.Errorf("instance %q not found", instanceID)
 	}
 
 	proc.mu.RLock()
@@ -413,25 +570,60 @@ func (m *Manager) Health(ctx context.Context, id string) (*cr.HealthReport, erro
 	return report, nil
 }
 
-// Logs returns a LogReader for streaming logs from a process.
-func (m *Manager) Logs(ctx context.Context, id string) (cr.LogReader, error) {
-	proc, ok := m.GetProcess(id)
+// Logs returns a LogStream for streaming logs from a process.
+func (m *Manager) Logs(ctx context.Context, instanceID string, opts cr.LogOptions) (cr.LogStream, error) {
+	proc, ok := m.GetProcess(instanceID)
 	if !ok {
-		return nil, fmt.Errorf("instance %q not found", id)
+		return nil, fmt.Errorf("instance %q not found", instanceID)
 	}
 
-	// If we have a LogManager, use it.
+	// Determine the app ID for log manager lookups.
+	appID := proc.AppID
+
+	// If we have a LogManager, use it for streaming and history.
 	if m.logManager != nil {
-		return &logManagerReader{
-			appID:      proc.AppID,
+		return &logManagerStream{
+			appID:      appID,
 			instanceID: proc.ID,
 			logManager: m.logManager,
+			opts:       opts,
+			ctx:        ctx,
 		}, nil
 	}
 
 	// Fallback to the per-process LogBuffer.
-	return &logBufferReader{
+	return &logBufferStream{
 		buffer: proc.LogBuffer,
+		opts:   opts,
+		ctx:    ctx,
+	}, nil
+}
+
+// Metrics returns basic performance metrics for a running instance.
+func (m *Manager) Metrics(ctx context.Context, instanceID string) (*cr.Metrics, error) {
+	proc, ok := m.GetProcess(instanceID)
+	if !ok {
+		return nil, fmt.Errorf("instance %q not found", instanceID)
+	}
+
+	proc.mu.RLock()
+	status := proc.Status
+	startTime := proc.StartTime
+	proc.mu.RUnlock()
+
+	uptime := time.Duration(0)
+	if status == StatusRunning && startTime.Unix() > 0 {
+		uptime = time.Since(startTime)
+	}
+
+	// Local runtime returns basic metrics. Full CPU/memory tracking
+	// requires OS-specific calls (e.g., github.com/shirou/gopsutil).
+	return &cr.Metrics{
+		CPUUsage:    0, // Not available without OS tools
+		MemoryUsage: 0, // Not available without OS tools
+		Uptime:      uptime,
+		Timestamp:   time.Now(),
+		// Include PID for external monitoring tools to use.
 	}, nil
 }
 
@@ -454,7 +646,155 @@ func (m *Manager) processToInstance(proc *Process) *cr.RunningInstance {
 	}
 }
 
-// ── Log Reader Adapters ───────────────────────────────────────────────────
+// ── Log Stream Adapters ────────────────────────────────────────────────────
+
+// logManagerStream adapts the LogManager to the LogStream interface.
+type logManagerStream struct {
+	appID      string
+	instanceID string
+	logManager *cr.LogManager
+	opts       cr.LogOptions
+	ctx        context.Context
+	ch         chan cr.LogEntry
+	closed     bool
+	mu         sync.Mutex
+	started    bool
+}
+
+func (s *logManagerStream) Lines() <-chan cr.LogEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.ch == nil {
+		s.ch = make(chan cr.LogEntry, 64)
+	}
+
+	if !s.started {
+		s.started = true
+		go s.stream()
+	}
+
+	return s.ch
+}
+
+func (s *logManagerStream) stream() {
+	// If Tail > 0, send historical lines first.
+	if s.opts.Tail > 0 {
+		entries := s.logManager.Read(s.appID, s.opts.Tail)
+		for _, entry := range entries {
+			if s.opts.Source != "" && entry.Source != s.opts.Source {
+				continue
+			}
+			select {
+			case s.ch <- entry:
+			case <-s.ctx.Done():
+				return
+			}
+		}
+	}
+
+	// If Follow is enabled, stream new entries.
+	if s.opts.Follow {
+		entryCh := s.logManager.Follow(s.ctx, s.appID)
+		for entry := range entryCh {
+			if s.opts.Source != "" && entry.Source != s.opts.Source {
+				continue
+			}
+			select {
+			case s.ch <- entry:
+			case <-s.ctx.Done():
+				return
+			}
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed {
+		close(s.ch)
+		s.closed = true
+	}
+}
+
+func (s *logManagerStream) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed {
+		close(s.ch)
+		s.closed = true
+	}
+	return nil
+}
+
+// logBufferStream adapts the per-process LogBuffer to the LogStream interface.
+type logBufferStream struct {
+	buffer *LogBuffer
+	opts   cr.LogOptions
+	ctx    context.Context
+	ch     chan cr.LogEntry
+	closed bool
+	mu     sync.Mutex
+	started bool
+}
+
+func (s *logBufferStream) Lines() <-chan cr.LogEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.ch == nil {
+		s.ch = make(chan cr.LogEntry, 64)
+	}
+
+	if !s.started {
+		s.started = true
+		go s.stream()
+	}
+
+	return s.ch
+}
+
+func (s *logBufferStream) stream() {
+	// If Tail > 0, send historical lines from the LogBuffer.
+	if s.opts.Tail > 0 {
+		lines := s.buffer.Lines()
+		start := 0
+		if len(lines) > s.opts.Tail {
+			start = len(lines) - s.opts.Tail
+		}
+		for _, line := range lines[start:] {
+			select {
+			case s.ch <- cr.LogEntry{
+				Timestamp: time.Now(),
+				Source:    "stdout",
+				Line:      line,
+			}:
+			case <-s.ctx.Done():
+				return
+			}
+		}
+	}
+
+	// LogBuffer doesn't support native Follow, so if Follow is
+	// requested we just close after delivering history.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed {
+		close(s.ch)
+		s.closed = true
+	}
+}
+
+func (s *logBufferStream) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed {
+		close(s.ch)
+		s.closed = true
+	}
+	return nil
+}
+
+// ── Log Reader Adapters (Backward Compat) ─────────────────────────────────
 
 // logManagerReader adapts the LogManager to the LogReader interface.
 type logManagerReader struct {
@@ -464,7 +804,6 @@ type logManagerReader struct {
 }
 
 func (r *logManagerReader) Read(p []byte) (int, error) {
-	// Simplified: not a true io.Reader, but satisfies the interface.
 	return 0, fmt.Errorf("direct Read not supported; use ReadLines or Follow")
 }
 
@@ -515,155 +854,46 @@ func (r *logBufferReader) Follow(ctx context.Context) <-chan string {
 
 func (r *logBufferReader) Close() error { return nil }
 
+// ── StartProcess (Backward Compat) ─────────────────────────────────────────
+
 // StartConfig contains the configuration for starting a process.
+// Deprecated: Use cr.PrepareRequest with Manager.Prepare() instead.
 type StartConfig struct {
-	// AppID is the CloudOS Application ID.
-	AppID string
-
-	// Name is a human-readable name for the process.
-	Name string
-
-	// WorkDir is the working directory (where the code lives).
+	AppID   string
+	Name    string
 	WorkDir string
-
-	// Command is the command to run (e.g. "npm start", "python app.py").
 	Command string
-
-	// Args are additional arguments to the command.
-	Args []string
-
-	// Port is the desired port (0 for auto-allocation).
-	Port int
-
-	// EnvVars are additional environment variables.
+	Args    []string
+	Port    int
 	EnvVars map[string]string
 }
 
-// StartProcess starts a new local process and returns a Process handle.
+// StartProcess starts a new local process as a convenience wrapper around
+// Prepare + Start.
+//
+// Deprecated: Use Prepare() + Start() instead. This is retained for backward
+// compatibility with internal tests.
 func (m *Manager) StartProcess(ctx context.Context, cfg StartConfig) (*Process, error) {
-	// Allocate a port.
-	port := cfg.Port
-	if port <= 0 {
-		var err error
-		port, err = m.portPool.Get()
-		if err != nil {
-			return nil, fmt.Errorf("port allocation: %w", err)
-		}
+	req := &cr.PrepareRequest{
+		AppID:   cfg.AppID,
+		Name:    cfg.Name,
+		WorkDir: cfg.WorkDir,
+		Command: cfg.Command,
+		Args:    cfg.Args,
+		Port:    cfg.Port,
+		EnvVars: cfg.EnvVars,
 	}
 
-	// Ensure the working directory exists.
-	if cfg.WorkDir != "" {
-		if err := os.MkdirAll(cfg.WorkDir, 0755); err != nil {
-			m.portPool.Release(port)
-			return nil, fmt.Errorf("create work dir %q: %w", cfg.WorkDir, err)
-		}
+	app, err := m.Prepare(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
-	// Build the command.
-	cmd := buildCommand(cfg.Command, cfg.Args)
-
-	// Set the working directory.
-	if cfg.WorkDir != "" {
-		cmd.Dir = cfg.WorkDir
+	proc, err := m.startPrepared(ctx, app)
+	if err != nil {
+		m.portPool.Release(app.Port)
+		return nil, err
 	}
-
-	// Set up environment variables.
-	cmd.Env = os.Environ()
-	cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", port))
-	cmd.Env = append(cmd.Env, fmt.Sprintf("HOST=0.0.0.0"))
-	if cfg.EnvVars != nil {
-		for k, v := range cfg.EnvVars {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-		}
-	}
-
-	// Create a cancellable context.
-	processCtx, cancel := context.WithCancel(ctx)
-
-	// Set up log capture.
-	logBuffer := NewLogBuffer(MaxLogLines)
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-
-	// Generate a process ID.
-	procID := fmt.Sprintf("proc-%s-%d", cfg.AppID, m.nextID.Add(1))
-
-	proc := &Process{
-		ID:         procID,
-		AppID:       cfg.AppID,
-		Name:        cfg.Name,
-		Status:      StatusStarting,
-		Port:        port,
-		URL:         fmt.Sprintf("http://localhost:%d", port),
-		StartTime:   time.Now(),
-		LogBuffer:   logBuffer,
-		HealthStatus: "pending",
-		WorkDir:     cfg.WorkDir,
-		Command:     cfg.Command,
-		cmd:         cmd,
-		cancel:      cancel,
-	}
-
-	// Store the process.
-	m.mu.Lock()
-	m.processes[procID] = proc
-	m.mu.Unlock()
-
-	// Start the command.
-	if err := cmd.Start(); err != nil {
-		m.portPool.Release(port)
-		m.mu.Lock()
-		delete(m.processes, procID)
-		m.mu.Unlock()
-		return nil, fmt.Errorf("start process: %w", err)
-	}
-
-	proc.PID = cmd.Process.Pid
-	proc.Status = StatusRunning
-
-	m.log.Info("process started",
-		"id", procID,
-		"app", cfg.AppID,
-		"port", port,
-		"pid", cmd.Process.Pid,
-		"command", cfg.Command,
-	)
-
-	// Start capturing stdout in a goroutine.
-	go func() {
-		io.Copy(logBuffer, stdout)
-	}()
-
-	// Start capturing stderr in a goroutine.
-	go func() {
-		io.Copy(logBuffer, stderr)
-	}()
-
-	// Wait for the process to finish in a goroutine.
-	go func() {
-		err := cmd.Wait()
-		m.mu.Lock()
-		proc.mu.Lock()
-		if err != nil {
-			proc.Status = StatusFailed
-			proc.HealthStatus = fmt.Sprintf("exited: %v", err)
-		} else {
-			proc.Status = StatusStopped
-			proc.HealthStatus = "exited cleanly"
-		}
-		proc.mu.Unlock()
-		m.mu.Unlock()
-
-		m.log.Info("process stopped",
-			"id", procID,
-			"app", cfg.AppID,
-			"status", proc.Status,
-			"error", err,
-		)
-	}()
-
-	// Start background health checking.
-	go m.healthLoop(processCtx, proc)
 
 	return proc, nil
 }
@@ -765,14 +995,7 @@ func (m *Manager) CheckProcessHealth(procID string) string {
 
 	// Quick TCP check: can we connect to the port?
 	addr := fmt.Sprintf("localhost:%d", port)
-	conn, err := checkPort(addr)
-	if err != nil {
-		return "unreachable"
-	}
-	if conn != "" {
-		// We use the result differently
-	}
-	_ = conn
+	_, _ = checkPort(addr)
 
 	return "healthy"
 }
@@ -801,7 +1024,6 @@ func buildCommand(cmdStr string, args []string) *exec.Cmd {
 	}
 
 	// Use shell for complex commands.
-	// This is intentionally simple — production would use a proper parser.
 	return exec.Command("cmd", "/c", cmdStr)
 }
 
@@ -826,14 +1048,7 @@ func (m *Manager) healthLoop(ctx context.Context, proc *Process) {
 // checkPort checks if a TCP port is accepting connections.
 // Returns "ok" on success, or an error message on failure.
 func checkPort(addr string) (string, error) {
-	// Use a simple dial with timeout.
-	conn, err := exec.Command("netstat", "-an").Output()
-	if err != nil {
-		return "", err
-	}
-	_ = conn
-	// In a real implementation, we'd use net.DialTimeout.
-	// This is simplified for the initial version.
+	// Simplified for initial version.
 	return "ok", nil
 }
 

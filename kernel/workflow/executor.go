@@ -398,9 +398,13 @@ func (ex *Executor) execBuildExecute(node *TaskNode) error {
 // execProviderDeploy deploys the application using the configured Runtime.
 // The target specifies the runtime type (e.g. "runtime:node").
 //
-// This is the critical action: it detects the runtime from the project,
-// determines the start command, allocates a port, and starts the process
-// via the Runtime interface (which may be Local, Docker, SSH, etc.).
+// This is the critical action: it uses the Buildpack Engine to detect the
+// application type, plan the build, run install/build commands, produce an
+// Artifact, and start it via the Runtime interface.
+//
+// Flow:
+//
+//	Source → Buildpack Engine → BuildPlan → install/build → Artifact → Runtime
 func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 	if ex.runtimeManager == nil {
 		return fmt.Errorf("runtime manager not available")
@@ -411,62 +415,79 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 		return fmt.Errorf("no work directory available for deployment")
 	}
 
-	// Detect the runtime using buildpacks.
-	detected, err := buildpack.Detect(workDir)
+	// ── Detect and plan using the Buildpack Engine ────────────────────
+	bpEngine := buildpack.NewEngine()
+	src := buildpack.Source{Path: workDir}
+
+	bp, err := bpEngine.Detect(context.Background(), src)
 	if err != nil {
-		return fmt.Errorf("runtime detection failed in %q: %w", workDir, err)
+		return fmt.Errorf("buildpack detection failed in %q: %w", workDir, err)
 	}
 
-	ex.log.Info("runtime detected",
+	plan, err := bpEngine.Plan(context.Background(), src, bp)
+	if err != nil {
+		return fmt.Errorf("buildpack planning failed in %q: %w", workDir, err)
+	}
+
+	ex.log.Info("buildpack detected",
 		"dir", workDir,
-		"type", detected.Type,
-		"install", detected.InstallCmd,
-		"build", detected.BuildCmd,
-		"start", detected.StartCmd,
+		"buildpack", bp.Name(),
+		"runtime", plan.RuntimeType,
+		"install", plan.InstallCmd,
+		"build", plan.BuildCmd,
+		"start", plan.StartCmd,
 	)
 
 	// Fix up commands for the platform (e.g., Windows needs .exe extension).
-	// This is called after buildpack detection so the buildpack output is
-	// adjusted to match the local OS conventions.
-	ex.fixupPlatformCommands(detected)
+	ex.fixupPlatformPlan(plan)
 
 	// ── Ensure dependencies are installed ─────────────────────────────
-	// The install and build steps may have been skipped if the workflow
-	// definition didn't include them. Run them here as needed.
-	if detected.InstallCmd != "" {
-		ex.log.Info("running install command", "dir", workDir, "cmd", detected.InstallCmd)
-		installCmd := exec.Command("cmd", "/c", detected.InstallCmd)
+	if plan.InstallCmd != "" {
+		ex.log.Info("running install command", "dir", workDir, "cmd", plan.InstallCmd)
+		installCmd := exec.Command("cmd", "/c", plan.InstallCmd)
 		installCmd.Dir = workDir
 		if output, err := installCmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("install command %q failed in %q: %s: %w",
-				detected.InstallCmd, workDir, truncateOutput(string(output)), err)
+				plan.InstallCmd, workDir, truncateOutput(string(output)), err)
 		}
 		ex.log.Info("install completed", "dir", workDir)
 	}
 
 	// ── Build the project ─────────────────────────────────────────────
-	if detected.BuildCmd != "" {
-		ex.log.Info("running build command", "dir", workDir, "cmd", detected.BuildCmd)
-		buildCmd := exec.Command("cmd", "/c", detected.BuildCmd)
+	if plan.BuildCmd != "" {
+		ex.log.Info("running build command", "dir", workDir, "cmd", plan.BuildCmd)
+		buildCmd := exec.Command("cmd", "/c", plan.BuildCmd)
 		buildCmd.Dir = workDir
 		if output, err := buildCmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("build command %q failed in %q: %s: %w",
-				detected.BuildCmd, workDir, truncateOutput(string(output)), err)
+				plan.BuildCmd, workDir, truncateOutput(string(output)), err)
 		}
 		ex.log.Info("build completed", "dir", workDir)
 	}
+
+	// ── Produce the BuildResult / Artifact ────────────────────────────
+	result, err := bpEngine.Build(context.Background(), plan)
+	if err != nil {
+		return fmt.Errorf("buildpack build failed in %q: %w", workDir, err)
+	}
+
+	artifact := result.Artifact
+	ex.log.Info("artifact produced",
+		"buildpack", bp.Name(),
+		"type", artifact.Type,
+		"path", artifact.Path,
+	)
 
 	// Determine the app ID for process tracking.
 	appID := extractAppID(node)
 
 	// Build the start command. Port 0 means the runtime will auto-allocate.
-	startCmd := detected.StartCmd
+	startCmd := artifact.StartCmd
 	var port int
 	if startCmd == "" {
-		// Static sites: tell the runtime to use npx serve as the command
-		// and the runtime will handle port allocation.
-		startCmd = fmt.Sprintf("npx serve -s %s", detected.OutputDir)
-		if detected.OutputDir == "" {
+		// Static sites: use npx serve with the artifact output directory.
+		startCmd = fmt.Sprintf("npx serve -s %s", artifact.Path)
+		if artifact.Path == "" || artifact.Path == workDir {
 			startCmd = "npx serve -s ."
 		}
 	}
@@ -476,20 +497,35 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 		"HOST":   "0.0.0.0",
 		"APP_ID": appID,
 	}
-	for k, v := range detected.EnvVars {
+	for k, v := range artifact.EnvVars {
 		envVars[k] = v
 	}
 
-	// Start the process via the Runtime interface.
-	// The Runtime handles port allocation and {port} substitution.
-	inst, err := ex.runtimeManager.Start(context.Background(), cr.StartConfig{
+	// Use the artifact path as the working directory for the runtime.
+	runtimeDir := artifact.Path
+	if runtimeDir == "" {
+		runtimeDir = workDir
+	}
+
+	// Prepare the application (allocates port, validates environment).
+	prepared, err := ex.runtimeManager.Prepare(context.Background(), &cr.PrepareRequest{
 		AppID:   appID,
 		Name:    fmt.Sprintf("app-%s", appID),
-		WorkDir: workDir,
+		WorkDir: runtimeDir,
 		Command: startCmd,
 		Port:    0, // auto-allocate
 		EnvVars: envVars,
+		Artifact: &cr.ArtifactRef{
+			Type: string(artifact.Type),
+			Path: artifact.Path,
+		},
 	})
+	if err != nil {
+		return fmt.Errorf("prepare via runtime: %w", err)
+	}
+
+	// Start the prepared application via the Runtime interface.
+	inst, err := ex.runtimeManager.Start(context.Background(), prepared)
 	if err != nil {
 		return fmt.Errorf("start via runtime: %w", err)
 	}
@@ -514,7 +550,8 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 		"url", inst.URL,
 		"port", port,
 		"pid", inst.PID,
-		"detected", detected.Type,
+		"buildpack", bp.Name(),
+		"artifact_type", artifact.Type,
 	)
 	return nil
 }
@@ -527,12 +564,12 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 // This is called by the Engine when a run is cancelled, fails, or completes
 // to ensure no orphan processes are left behind.
 func (ex *Executor) CleanupRun(ctx context.Context, runID string) {
-	// Stop running instances.
+	// Destroy running instances (stop + release all resources).
 	if val, ok := ex.instances.Load(runID); ok {
 		if instID, ok := val.(string); ok && instID != "" {
-			ex.log.Info("cleaning up instance for cancelled run", "run_id", runID, "instance", instID)
-			if err := ex.runtimeManager.Stop(ctx, instID); err != nil {
-				ex.log.Warn("cleanup stop instance", "run_id", runID, "instance", instID, "error", err.Error())
+			ex.log.Info("destroying instance for run", "run_id", runID, "instance", instID)
+			if err := ex.runtimeManager.Destroy(ctx, instID); err != nil {
+				ex.log.Warn("cleanup destroy instance", "run_id", runID, "instance", instID, "error", err.Error())
 			}
 		}
 		ex.instances.Delete(runID)
@@ -605,7 +642,7 @@ func isDirectory(path string) bool {
 	return strings.Contains(path, "/") || strings.Contains(path, "\\")
 }
 
-// fixupPlatformCommands adjusts buildpack commands for OS-specific conventions.
+// fixupPlatformPlan adjusts a BuildPlan's commands for OS-specific conventions.
 //
 // On Windows:
 //   - Go's `go build -o app .` produces a file named `app` (no .exe extension
@@ -615,14 +652,14 @@ func isDirectory(path string) bool {
 //     because Windows cmd.exe interprets `/app` as a command-line switch rather
 //     than a path component. Removing the `./` prefix lets Windows resolve the
 //     binary via PATHEXT (.exe, .bat, etc.).
-func (ex *Executor) fixupPlatformCommands(detected *buildpack.DetectedRuntime) {
+func (ex *Executor) fixupPlatformPlan(plan *buildpack.BuildPlan) {
 	if runtime.GOOS != "windows" {
 		return
 	}
 
 	// Fix Go build output: `go build -o app .` → `go build -o app.exe .`
-	if detected.Type == "go" {
-		detected.BuildCmd = strings.ReplaceAll(detected.BuildCmd,
+	if plan.RuntimeType == buildpack.RuntimeGo {
+		plan.BuildCmd = strings.ReplaceAll(plan.BuildCmd,
 			"go build -o app .",
 			"go build -o app.exe .")
 	}
@@ -630,7 +667,7 @@ func (ex *Executor) fixupPlatformCommands(detected *buildpack.DetectedRuntime) {
 	// Fix start commands that use Unix `./` prefix.
 	// On Windows cmd.exe, `./app` is interpreted as command `.` with switch `/app`.
 	// Stripping the prefix lets Windows resolve via PATHEXT.
-	detected.StartCmd = strings.TrimPrefix(detected.StartCmd, "./")
+	plan.StartCmd = strings.TrimPrefix(plan.StartCmd, "./")
 }
 
 // truncateOutput truncates command output for error messages.

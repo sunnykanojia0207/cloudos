@@ -16,6 +16,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  AppWindow,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -48,7 +49,8 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'General',
     items: [
-      { label: 'Dashboard', to: '/', icon: LayoutDashboard },
+      { label: 'Applications', to: '/', icon: AppWindow },
+      { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
       { label: 'Projects', to: '/projects', icon: Folder, badge: 'projects' },
     ],
   },

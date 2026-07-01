@@ -10,6 +10,7 @@ import (
 	"github.com/cloudos/cloudos/kernel/health"
 	"github.com/cloudos/cloudos/kernel/resource"
 	cr "github.com/cloudos/cloudos/kernel/runtime"
+	"github.com/cloudos/cloudos/kernel/safe"
 	"github.com/cloudos/cloudos/kernel/source"
 	"github.com/cloudos/cloudos/packages/logging"
 )
@@ -519,14 +520,14 @@ func (eng *Engine) executeNode(ctx context.Context, run *WorkflowRun, node Node)
 			eng.events.PublishNodeEvent(EventNodeRetrying, run, node)
 			eng.log.Debug("retrying node", "node", node.ID(), "attempt", taskNode.RetryCount, "delay", delay)
 
-			// Re-enqueue after backoff
-			go func() {
+			// Re-enqueue after backoff (with panic recovery).
+			safe.Go(func() {
 				time.Sleep(delay)
 				_ = eng.queue.Enqueue(context.Background(), QueueItem{
 					WorkflowID: run.ID,
 					NodeID:     node.ID(),
 				})
-			}()
+			})
 			return nil
 		}
 

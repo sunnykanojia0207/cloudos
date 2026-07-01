@@ -74,6 +74,74 @@ func NewParser() *Parser {
 				return nil
 			},
 		},
+		// ── Deploy Patterns ─────────────────────────────────────────────
+		{
+			// "deploy my <runtime> app from <url>"
+			// e.g. "deploy my node app from https://github.com/user/repo"
+			regex:  regexp.MustCompile(`(?i)^deploy\s+my\s+(node|python|go|static|nextjs|laravel|docker)\s+app\s+from\s+(https?://\S+)$`),
+			intent: IntentDeploy,
+			extract: func(m []string) map[string]string {
+				runtime := strings.ToLower(strings.TrimSpace(m[1]))
+				url := strings.TrimSpace(m[2])
+				// Infer app name from URL
+				parts := strings.Split(strings.TrimRight(url, "/"), "/")
+				name := parts[len(parts)-1]
+				return map[string]string{
+					"runtime":   runtime,
+					"sourceURL": url,
+					"appName":   name,
+				}
+			},
+		},
+		{
+			// "deploy <runtime> app from <url>"
+			// e.g. "deploy go app from https://github.com/user/repo"
+			regex:  regexp.MustCompile(`(?i)^deploy\s+(node|python|go|static|nextjs|laravel|docker)\s+app\s+from\s+(https?://\S+)$`),
+			intent: IntentDeploy,
+			extract: func(m []string) map[string]string {
+				runtime := strings.ToLower(strings.TrimSpace(m[1]))
+				url := strings.TrimSpace(m[2])
+				parts := strings.Split(strings.TrimRight(url, "/"), "/")
+				name := parts[len(parts)-1]
+				return map[string]string{
+					"runtime":   runtime,
+					"sourceURL": url,
+					"appName":   name,
+				}
+			},
+		},
+		{
+			// "deploy app from <url>"
+			// e.g. "deploy app from https://github.com/user/repo" (auto-detect runtime)
+			regex:  regexp.MustCompile(`(?i)^deploy\s+app\s+from\s+(https?://\S+)$`),
+			intent: IntentDeploy,
+			extract: func(m []string) map[string]string {
+				url := strings.TrimSpace(m[1])
+				parts := strings.Split(strings.TrimRight(url, "/"), "/")
+				name := parts[len(parts)-1]
+				return map[string]string{
+					"runtime":   "auto",
+					"sourceURL": url,
+					"appName":   name,
+				}
+			},
+		},
+		{
+			// "deploy from <url>"
+			// e.g. "deploy from https://github.com/user/repo" (concise form)
+			regex:  regexp.MustCompile(`(?i)^deploy\s+from\s+(https?://\S+)$`),
+			intent: IntentDeploy,
+			extract: func(m []string) map[string]string {
+				url := strings.TrimSpace(m[1])
+				parts := strings.Split(strings.TrimRight(url, "/"), "/")
+				name := parts[len(parts)-1]
+				return map[string]string{
+					"runtime":   "auto",
+					"sourceURL": url,
+					"appName":   name,
+				}
+			},
+		},
 	}
 	return p
 }
@@ -98,7 +166,7 @@ func (p *Parser) Parse(input string) (*Intent, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("unrecognized intent: %q — try something like \"create project my-app\", \"list projects\", \"show health\"", input)
+	return nil, fmt.Errorf("unrecognized intent: %q — try something like \"create project my-app\", \"deploy my node app from https://github.com/user/repo\", \"list projects\", \"show health\"", input)
 }
 
 // toID converts a display name to a DNS-safe identifier

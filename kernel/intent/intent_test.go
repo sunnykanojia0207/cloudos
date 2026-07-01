@@ -298,6 +298,233 @@ func TestPlanInvalidType(t *testing.T) {
 	}
 }
 
+// ── Deploy Parser Tests ─────────────────────────────────────────────────
+
+func TestParseDeployRuntimeAppFromURL(t *testing.T) {
+	p := NewParser()
+	tests := []struct {
+		input   string
+		runtime string
+		appName string
+	}{
+		{"deploy my node app from https://github.com/user/myapp", "node", "myapp"},
+		{"deploy go app from https://github.com/user/hello-world", "go", "hello-world"},
+		{"deploy python app from https://github.com/user/api", "python", "api"},
+		{"deploy static app from https://github.com/user/site", "static", "site"},
+		{"deploy nextjs app from https://github.com/user/next-blog", "nextjs", "next-blog"},
+		{"deploy laravel app from https://github.com/user/laravel-app", "laravel", "laravel-app"},
+		{"deploy docker app from https://github.com/user/container", "docker", "container"},
+	}
+	for _, tc := range tests {
+		intent, err := p.Parse(tc.input)
+		if err != nil {
+			t.Errorf("Parse(%q) error: %v", tc.input, err)
+			continue
+		}
+		if intent.Type != IntentDeploy {
+			t.Errorf("Parse(%q) Type = %q, want %q", tc.input, intent.Type, IntentDeploy)
+		}
+		if intent.Params["runtime"] != tc.runtime {
+			t.Errorf("Parse(%q) runtime = %q, want %q", tc.input, intent.Params["runtime"], tc.runtime)
+		}
+		if intent.Params["appName"] != tc.appName {
+			t.Errorf("Parse(%q) appName = %q, want %q", tc.input, intent.Params["appName"], tc.appName)
+		}
+	}
+}
+
+func TestParseDeployAppFromURL(t *testing.T) {
+	p := NewParser()
+	intent, err := p.Parse("deploy app from https://github.com/user/my-repo")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if intent.Type != IntentDeploy {
+		t.Errorf("Type = %q, want %q", intent.Type, IntentDeploy)
+	}
+	if intent.Params["runtime"] != "auto" {
+		t.Errorf("runtime = %q, want %q", intent.Params["runtime"], "auto")
+	}
+	if intent.Params["sourceURL"] != "https://github.com/user/my-repo" {
+		t.Errorf("sourceURL = %q, want %q", intent.Params["sourceURL"], "https://github.com/user/my-repo")
+	}
+	if intent.Params["appName"] != "my-repo" {
+		t.Errorf("appName = %q, want %q", intent.Params["appName"], "my-repo")
+	}
+}
+
+func TestParseDeployFromURL(t *testing.T) {
+	p := NewParser()
+	intent, err := p.Parse("deploy from https://github.com/user/myapp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if intent.Type != IntentDeploy {
+		t.Errorf("Type = %q, want %q", intent.Type, IntentDeploy)
+	}
+	if intent.Params["runtime"] != "auto" {
+		t.Errorf("runtime = %q, want %q", intent.Params["runtime"], "auto")
+	}
+}
+
+// ── Deploy Planner Tests ────────────────────────────────────────────────
+
+func TestPlanDeploy(t *testing.T) {
+	pl := NewPlanner()
+	intent := &Intent{
+		ID:   "test-deploy",
+		Type: IntentDeploy,
+		Params: map[string]string{
+			"runtime":   "node",
+			"sourceURL": "https://github.com/user/myapp",
+			"appName":   "myapp",
+		},
+	}
+	plan, err := pl.Plan(intent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(plan.Steps) != 5 {
+		t.Fatalf("expected 5 steps, got %d", len(plan.Steps))
+	}
+	expectedSteps := []string{
+		"Validate Deploy Request",
+		"Create Application Resource",
+		"Wait for Application Controller",
+		"Check Application Status",
+		"Return Access URL",
+	}
+	for i, step := range plan.Steps {
+		if step.Name != expectedSteps[i] {
+			t.Errorf("Step %d Name = %q, want %q", i+1, step.Name, expectedSteps[i])
+		}
+		if step.Status != StepPending {
+			t.Errorf("Step %d Status = %q, want %q", i+1, step.Status, StepPending)
+		}
+	}
+	// Verify dependency chain
+	if len(plan.Steps[1].Dependencies) != 1 || plan.Steps[1].Dependencies[0] != "1" {
+		t.Error("Step 2 should depend on Step 1")
+	}
+	// Verify plan preview exists
+	if plan.Preview == nil {
+		t.Fatal("PlanPreview should not be nil")
+	}
+	if len(plan.Preview.Steps) != 5 {
+		t.Errorf("Preview.Steps = %d, want 5", len(plan.Preview.Steps))
+	}
+}
+
+// ── Deploy Engine Tests ─────────────────────────────────────────────────
+
+func TestEngineSubmitDeploy(t *testing.T) {
+	engine, _, _, _, _ := setupTestEngine(t)
+
+	intent, err := engine.Submit(context.Background(), "deploy my node app from https://github.com/user/myapp")
+	if err != nil {
+		t.Fatalf("Submit() error: %v", err)
+	}
+
+	// Verify parse result
+	if intent.Type != IntentDeploy {
+		t.Errorf("Type = %q, want %q", intent.Type, IntentDeploy)
+	}
+	if intent.Params["runtime"] != "node" {
+		t.Errorf("runtime = %q, want %q", intent.Params["runtime"], "node")
+	}
+	if intent.Params["appName"] != "myapp" {
+		t.Errorf("appName = %q, want %q", intent.Params["appName"], "myapp")
+	}
+
+	// Verify awaiting approval
+	if intent.Status != IntentAwaitingApproval {
+		t.Errorf("Status = %q, want %q", intent.Status, IntentAwaitingApproval)
+	}
+
+	// Verify plan and preview
+	plan, ok := engine.GetPlan(intent.PlanID)
+	if !ok {
+		t.Fatal("GetPlan() returned false")
+	}
+	if plan.Preview == nil {
+		t.Fatal("Plan should have a preview")
+	}
+	if len(plan.Preview.Steps) != 5 {
+		t.Errorf("Preview has %d steps, want 5", len(plan.Preview.Steps))
+	}
+	if len(plan.Preview.Resources) == 0 {
+		t.Error("Preview should list affected resources")
+	}
+}
+
+func TestEngineConfirmDeploy(t *testing.T) {
+	engine, _, _, reg, _ := setupTestEngine(t)
+
+	// Register Application kind
+	if err := reg.RegisterKind(resource.Kind{
+		Name:       "Application",
+		Namespaced: true,
+		Versions:   []string{"v1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	intent, err := engine.Submit(context.Background(), "deploy my node app from https://github.com/user/myapp")
+	if err != nil {
+		t.Fatalf("Submit() error: %v", err)
+	}
+	if intent.Status != IntentAwaitingApproval {
+		t.Fatalf("Status = %q, want %q", intent.Status, IntentAwaitingApproval)
+	}
+
+	// Confirm
+	confirmed, err := engine.Confirm(context.Background(), intent.ID)
+	if err != nil {
+		t.Fatalf("Confirm() error: %v", err)
+	}
+	if confirmed.Status != IntentExecuting {
+		t.Errorf("After Confirm, Status = %q, want %q", confirmed.Status, IntentExecuting)
+	}
+
+	// Wait for execution
+	time.Sleep(200 * time.Millisecond)
+
+	updated, ok := engine.GetIntent(intent.ID)
+	if !ok {
+		t.Fatal("GetIntent() returned false")
+	}
+	t.Logf("Deploy intent status: %s, result: %v, error: %s", updated.Status, updated.Result, updated.Error)
+	// Note: deploy execution may partially succeed depending on controller setup,
+	// but the App resource should have been created
+}
+
+func TestEngineConfirmWithoutSubmit(t *testing.T) {
+	engine, _, _, _, _ := setupTestEngine(t)
+
+	_, err := engine.Confirm(context.Background(), "nonexistent")
+	if err == nil {
+		t.Fatal("Expected error for nonexistent intent")
+	}
+}
+
+func TestEngineConfirmWrongStatus(t *testing.T) {
+	engine, _, _, _, _ := setupTestEngine(t)
+
+	intent, err := engine.Submit(context.Background(), "invalid input here")
+	if err != nil {
+		t.Fatalf("Submit() error: %v", err)
+	}
+	if intent.Status != IntentFailed {
+		t.Fatalf("Status = %q, want %q", intent.Status, IntentFailed)
+	}
+
+	// Confirm should fail because intent is not awaiting_approval
+	_, err = engine.Confirm(context.Background(), intent.ID)
+	if err == nil {
+		t.Fatal("Expected error for non-awaiting intent")
+	}
+}
+
 // ── Engine Integration Tests ───────────────────────────────────────────
 
 func setupTestEngine(t *testing.T) (*IntentEngine, *events.Bus, *health.Manager, *resource.Registry, *controller.Manager) {
@@ -370,8 +597,18 @@ func TestEngineSubmitCreateProject(t *testing.T) {
 	if intent.PlanID == "" {
 		t.Error("PlanID should not be empty")
 	}
-	if intent.Status != IntentExecuting {
-		t.Errorf("Status = %q, want %q", intent.Status, IntentExecuting)
+	// After Submit, intent should be awaiting approval (not executing)
+	if intent.Status != IntentAwaitingApproval {
+		t.Errorf("Status = %q, want %q", intent.Status, IntentAwaitingApproval)
+	}
+
+	// Confirm execution
+	confirmed, err := engine.Confirm(context.Background(), intent.ID)
+	if err != nil {
+		t.Fatalf("Confirm() error: %v", err)
+	}
+	if confirmed.Status != IntentExecuting {
+		t.Errorf("After Confirm, Status = %q, want %q", confirmed.Status, IntentExecuting)
 	}
 
 	// Wait for execution to complete
@@ -524,6 +761,15 @@ func TestEngineDeleteProject(t *testing.T) {
 	intent, err := engine.Submit(context.Background(), "delete project delete-test")
 	if err != nil {
 		t.Fatalf("Submit() error: %v", err)
+	}
+	if intent.Status != IntentAwaitingApproval {
+		t.Errorf("After Submit, Status = %q, want %q", intent.Status, IntentAwaitingApproval)
+	}
+
+	// Confirm execution
+	_, err = engine.Confirm(context.Background(), intent.ID)
+	if err != nil {
+		t.Fatalf("Confirm() error: %v", err)
 	}
 
 	// Wait for execution
