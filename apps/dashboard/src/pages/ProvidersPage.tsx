@@ -1,4 +1,5 @@
 import { useProviders } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   Card,
   CardContent,
@@ -21,6 +22,7 @@ import { cn } from '@/lib/utils';
 import type { ProviderSpec, ProviderStatus } from '@cloudos/sdk';
 
 export default function ProvidersPage() {
+  usePageTitle('Providers');
   const { data, isLoading, error } = useProviders();
   const items = data?.items ?? [];
 

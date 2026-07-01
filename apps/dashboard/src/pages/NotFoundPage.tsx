@@ -1,8 +1,10 @@
 import { Link } from 'react-router-dom';
 import { FileQuestion } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 export default function NotFoundPage() {
+  usePageTitle('Not Found');
   return (
     <div className="flex min-h-[500px] flex-col items-center justify-center gap-4">
       <FileQuestion className="h-16 w-16 text-muted-foreground/50" />

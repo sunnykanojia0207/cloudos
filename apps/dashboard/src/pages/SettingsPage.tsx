@@ -1,10 +1,12 @@
 import { Settings2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 /**
  * Settings page — stub until the Configuration API is implemented.
  */
 export default function SettingsPage() {
+  usePageTitle('Settings');
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">

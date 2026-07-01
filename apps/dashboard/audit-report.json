@@ -1,0 +1,281 @@
+{
+  "audit": "Phase D — Production-Hardening Audit",
+  "codebase": "CloudOS Dashboard",
+  "date": "2026-07-01",
+  "files_audited": 119,
+  "summary": {
+    "total_issues": 18,
+    "P0": 0,
+    "P1": 7,
+    "P2": 8,
+    "P3": 3
+  },
+  "issues": [
+    {
+      "id": "A11Y-01",
+      "severity": "P1",
+      "effort_minutes": 15,
+      "title": "Dialog component missing aria-modal",
+      "file": "src/components/ui/dialog.tsx",
+      "description": "The Dialog component uses createPortal + framer-motion but does not set `aria-modal=\"true\"` on the dialog container. This causes screen readers to not restrict focus to the dialog content, violating ARIA Authoring Practices.",
+      "fix": "Add `aria-modal=\"true\"` to the dialog content container element.",
+      "category": "accessibility"
+    },
+    {
+      "id": "TS-01",
+      "severity": "P1",
+      "effort_minutes": 10,
+      "title": "ResourceListPage and ResourceDetailPage use unsafe `as any` casts",
+      "files": [
+        "src/pages/ResourceListPage.tsx:28-30",
+        "src/pages/ResourceDetailPage.tsx:28-30"
+      ],
+      "description": "Both pages cast API response data with `as any` to bypass TypeScript: `const data = response as any;` then destructure non-typed properties. This defeats type safety and will silently break if the API shape changes.",
+      "fix": "Define proper return types for the SDK query or use a type-safe mapper. Replace `as any` with a well-typed interface.",
+      "category": "type-safety"
+    },
+    {
+      "id": "DS-01",
+      "severity": "P1",
+      "effort_minutes": 20,
+      "title": "Design token inconsistency in ProjectCard and CreateProjectDialog",
+      "files": [
+        "src/components/projects/ProjectCard.tsx",
+        "src/components/projects/CreateProjectDialog.tsx"
+      ],
+      "description": "These two components use a completely different set of Tailwind classes (`text-muted-foreground`, `bg-muted`, `border-input`, `bg-background`, `text-destructive`, `bg-primary`, `text-primary`) that do not exist in the app's design system. The rest of the codebase uses `text-text-secondary`, `bg-surface`, `border-border`, `text-danger`, `bg-accent`, etc. This creates visual inconsistency and risks broken styling if tokens are removed.",
+      "fix": "Replace all shadcn-default tokens with the app's custom design tokens. E.g. `text-muted-foreground` → `text-text-secondary`, `bg-muted` → `bg-surface`, `bg-background` → `bg-app`, `text-destructive` → `text-danger`, `border-input` → `border-border`, `bg-primary` → `bg-accent`, `text-primary` → `text-accent`.",
+      "category": "code-quality"
+    },
+    {
+      "id": "DRY-01",
+      "severity": "P1",
+      "effort_minutes": 30,
+      "title": "DeploymentLogsTab and LogsTab are ~90% identical",
+      "files": [
+        "src/components/applications/DeploymentLogsTab.tsx",
+        "src/components/applications/LogsTab.tsx"
+      ],
+      "description": "Both files implement an identical log viewer: same search filter, same toolbar (search/pause/download/clear/timestamps), same log rendering, same auto-scroll logic, same connection status badge, same TerminalStatus footer. ~450 lines of duplicated code. Divergence risk is high.",
+      "fix": "Consolidate into a shared LogStream component parameterized by data source (app-level vs deployment-level). Or have DeploymentLogsTab delegate to LogsTab with a filter prop.",
+      "category": "maintainability"
+    },
+    {
+      "id": "PERF-01",
+      "severity": "P2",
+      "effort_minutes": 10,
+      "title": "Framer Motion animate-pulse animation on every badge in list renders",
+      "files": [
+        "src/components/applications/ApplicationCard.tsx:130",
+        "src/components/projects/ProjectCard.tsx:83-93",
+        "src/pages/ApplicationsPage.tsx",
+        "src/pages/ProjectsPage.tsx"
+      ],
+      "description": "The CSS `animate-pulse` class is applied conditionally (Deploying/Creating phase) but framer-motion's `motion.div` wrapper around every card in the list still triggers on initial render. With 20+ cards, this creates 20+ individual framer animations on mount, potentially causing jank on low-end devices.",
+      "fix": "Remove framer-motion `initial/animate` from list items and use CSS animations instead. Framer-motion's layout animations add significant overhead for simple fade-ins.",
+      "category": "performance"
+    },
+    {
+      "id": "PERF-02",
+      "severity": "P2",
+      "effort_minutes": 5,
+      "title": "Heavy polling interval on all useCloudOS hooks (10-30s)",
+      "file": "src/hooks/useCloudOS.ts",
+      "description": "Every resource hook in useCloudOS (system, capabilities, providers, resources, controllers, projects) uses `refetchInterval: 10000` or `30000`. If a user has all tabs open, this means 6+ API calls every 10-30 seconds regardless of tab visibility. No `refetchIntervalInBackground: false` optimization.",
+      "fix": "Set `refetchIntervalInBackground: false` on all queries so polling stops when the tab is backgrounded. Consider reducing to 30s for non-critical resources.",
+      "category": "performance"
+    },
+    {
+      "id": "PERF-03",
+      "severity": "P2",
+      "effort_minutes": 5,
+      "title": "Large page components: WorkflowDetailPage (40KB) and ProjectDetailPage (52KB)",
+      "files": [
+        "src/pages/WorkflowDetailPage.tsx",
+        "src/pages/ProjectDetailPage.tsx"
+      ],
+      "description": "These two pages are 40KB+ each and contain complex SVG rendering (workflow graph) and nested tab layouts. While already lazy-loaded via React.lazy, their chunk size will be large, increasing time-to-interactive for users navigating to these pages.",
+      "fix": "Consider further code-splitting: extract the SVG execution graph into a separate lazy chunk. Extract tab content components into separate files (some already exist, but the page still imports them eagerly).",
+      "category": "performance"
+    },
+    {
+      "id": "PERF-04",
+      "severity": "P2",
+      "effort_minutes": 15,
+      "title": "Framer-motion imported in every page for minimal animations",
+      "files": [
+        "src/pages/DashboardPage.tsx",
+        "src/pages/ApplicationsPage.tsx",
+        "src/pages/DeploymentsPage.tsx",
+        "src/pages/WorkflowsPage.tsx",
+        "src/pages/MonitoringPage.tsx",
+        "src/pages/SystemPage.tsx",
+        "src/pages/KernelPage.tsx",
+        "src/pages/CapabilitiesPage.tsx",
+        "src/pages/ProvidersPage.tsx",
+        "src/pages/ResourcesPage.tsx",
+        "src/pages/ControllersPage.tsx",
+        "src/pages/ProjectsPage.tsx",
+        "src/pages/PluginsPage.tsx",
+        "src/pages/SettingsPage.tsx",
+        "src/components/applications/TimelineTab.tsx",
+        "src/components/applications/DeploymentTimelineTab.tsx",
+        "src/components/ui/timeline-step.tsx",
+        "src/components/ui/dialog.tsx",
+        "src/components/ui/dropdown-menu.tsx",
+        "src/components/layout/AppShell.tsx",
+        "src/components/projects/ProjectCard.tsx",
+        "src/components/applications/ApplicationCard.tsx"
+      ],
+      "description": "Framer-motion is imported across 20+ files yet only used for trivial fade/slide-up animations and LayoutGroup. The bundle impact of framer-motion (~35KB gzipped) is paid on nearly every page load. These animations could be replaced entirely with CSS transitions/animations.",
+      "fix": "Replace framer-motion with CSS `transition` and `@keyframes` for simple animations. For layout animations, consider CSS `view-transition-name` or a lighter alternative. This would save ~35KB from every page bundle.",
+      "category": "bundle-size"
+    },
+    {
+      "id": "DS-02",
+      "severity": "P2",
+      "effort_minutes": 10,
+      "title": "Hardcoded colors in Terminal component bypass theme system",
+      "file": "src/components/ui/terminal.tsx",
+      "description": "The Terminal component uses hardcoded hex colors (`bg-[#0C0C0D]`, `text-[#D4D4D4]`) instead of design tokens. These won't respond to theme changes and cannot be customized.",
+      "fix": "Add terminal-specific CSS custom properties to index.css and reference them: `bg-[var(--color-terminal-bg)]` / `text-[var(--color-terminal-fg)]`. Or if Tailwind config supports it, add terminal colors there.",
+      "category": "maintainability"
+    },
+    {
+      "id": "A11Y-02",
+      "severity": "P2",
+      "effort_minutes": 10,
+      "title": "EmptyState action buttons not grouped as a region",
+      "file": "src/components/ui/empty-state.tsx:45-58",
+      "description": "The action buttons container has no `role=\"group\"` or `aria-label`, making it harder for screen reader users to understand that these are grouped actions related to the empty state.",
+      "fix": "Add `role=\"group\"` and `aria-label=\"Available actions\"` to the actions div.",
+      "category": "accessibility"
+    },
+    {
+      "id": "DRY-02",
+      "severity": "P2",
+      "effort_minutes": 15,
+      "title": "Duplicate GraphNode component and DEFAULT_NODES in WorkflowTab and DeploymentWorkflowTab",
+      "files": [
+        "src/components/applications/WorkflowTab.tsx:26-71",
+        "src/components/applications/DeploymentWorkflowTab.tsx:23-63"
+      ],
+      "description": "Both files define an identical `GraphNode` component and `DEFAULT_NODES` array. The logic for deriving node status is also duplicated (same fallback patterns).",
+      "fix": "Extract `GraphNode`, `DEFAULT_NODES`, and the status derivation function into a shared utility file or a single `WorkflowGraph` component.",
+      "category": "maintainability"
+    },
+    {
+      "id": "DRY-03",
+      "severity": "P2",
+      "effort_minutes": 10,
+      "title": "Duplicate mapStatus function in TimelineTab and DeploymentTimelineTab",
+      "files": [
+        "src/components/applications/TimelineTab.tsx:17-36",
+        "src/components/applications/DeploymentTimelineTab.tsx:20-28"
+      ],
+      "description": "Both files define a `mapStatus` function that converts API status strings to StepState. Implementation differs (switch vs array.includes) but achieves the same result.",
+      "fix": "Export mapStatus from timeline-step.tsx and import it in both tab components.",
+      "category": "maintainability"
+    },
+    {
+      "id": "BUG-01",
+      "severity": "P2",
+      "effort_minutes": 5,
+      "title": "DeploymentLogsTab shows connection/live status but uses useApplicationLogs (app-level)",
+      "file": "src/components/applications/DeploymentLogsTab.tsx:62-71",
+      "description": "DeploymentLogsTab calls `useApplicationLogs(appId)` which connects to an app-level WebSocket/log stream. The component is rendered inside a deployment detail page but shows connection status and logs for the entire application, not the specific deployment. This is misleading in the deployment context.",
+      "fix": "Either rename the component to clarify it shows app-level logs, or pass `deploymentId` to `useApplicationLogs` if the hook supports filtering.",
+      "category": "correctness"
+    },
+    {
+      "id": "CODE-01",
+      "severity": "P3",
+      "effort_minutes": 5,
+      "title": "Mock/hardcoded data in MonitoringTab",
+      "file": "src/components/applications/MonitoringTab.tsx:83-89",
+      "description": "MonitoringTab assigns hardcoded simulated values (`'12h 34m'`, `'2.4K'`, `'45ms'`, `'23%'`, `'128 MB'`) with a comment acknowledging they are simulated. This will ship to production showing fake data.",
+      "fix": "Either connect to a real metrics API/hook, or show metric placeholders with a \"No data yet\" state. If metrics API is planned for later, gate behind a feature flag.",
+      "category": "correctness"
+    },
+    {
+      "id": "CODE-02",
+      "severity": "P3",
+      "effort_minutes": 2,
+      "title": "Placeholder deployment number comment in DeploymentLogsTab",
+      "file": "src/components/applications/DeploymentLogsTab.tsx:232",
+      "description": "The footer renders `'Deployment #'` concatenated with a template literal that evaluates to an empty string, with a comment `{/* deployment number from parent context */}`. This renders as 'Deployment #' with no number.",
+      "fix": "Pass deploymentNumber as a prop to DeploymentLogsTab and render it properly, or remove the deployment number display.",
+      "category": "correctness"
+    },
+    {
+      "id": "CODE-03",
+      "severity": "P3",
+      "effort_minutes": 5,
+      "title": "Explicitly passing `duration={undefined}` to TimelineStep",
+      "file": "src/components/applications/TimelineTab.tsx:155",
+      "description": "TimelineStep receives `duration={undefined}` explicitly instead of simply omitting the prop. This works but is unnecessary and could cause confusion.",
+      "fix": "Remove the `duration={undefined}` prop since TimelineStep already handles optional duration.",
+      "category": "code-quality"
+    },
+    {
+      "id": "TS-02",
+      "severity": "P2",
+      "effort_minutes": 5,
+      "title": "SettingsTab env var values typed as unknown, used as ReactNode",
+      "file": "src/components/applications/SettingsTab.tsx:55-56",
+      "description": "`envVars` is `Record<string, unknown> | undefined`. `Object.entries(envVars)` produces `[string, unknown][]` but the value is rendered directly as `{value}` in JSX (line 199). React cannot render `unknown` — it would throw on objects or functions.",
+      "fix": "Cast or validate the value: `String(value)` or `JSON.stringify(value)`. Add a type guard to filter out non-primitive values.",
+      "category": "type-safety"
+    },
+    {
+      "id": "A11Y-03",
+      "severity": "P2",
+      "effort_minutes": 10,
+      "title": "ApplicationCard has tabIndex=0 and role=link but is not keyboard-focusable properly inside CardContent",
+      "file": "src/components/applications/ApplicationCard.tsx:88-96",
+      "description": "The Card itself has tabIndex=0 and onClick/onKeyDown, but nested interactive elements (buttons, dropdown trigger) inside CardContent call `e.stopPropagation()`. This creates a focus trap where keyboard users can tab to the card but then cannot reach the inner buttons without unusual navigation patterns.",
+      "fix": "Remove the outer tabIndex/click handler and make each interactive section independently focusable. Or implement a proper roving tabindex pattern.",
+      "category": "accessibility"
+    }
+  ],
+  "positive_findings": [
+    "Consistent use of React.lazy + Suspense for code splitting across all routes",
+    "Skip-to-content link in AppShell for keyboard users",
+    "Loading skeletons (Skeleton component) used in most async views",
+    "EmptyState component used consistently across all list/detail views",
+    "ErrorState with retry pattern consistently used",
+    "Toast notification system for user feedback",
+    "Offline detection via OfflineBanner component",
+    "Command palette with keyboard shortcuts for power users",
+    "Separator correctly handles decorative vs semantic roles",
+    "Progress component has proper ARIA progressbar attributes"
+  ],
+  "recommendations": [
+    {
+      "priority": "immediate",
+      "action": "Fix aria-modal on Dialog component and design token inconsistencies in ProjectCard/CreateProjectDialog",
+      "reason": "These are shipped accessibility violations and visual branding inconsistencies"
+    },
+    {
+      "priority": "this_sprint",
+      "action": "Consolidate duplicated components (LogsTab/DeploymentLogsTab, WorkflowTab/DeploymentWorkflowTab, TimelineTab/DeploymentTimelineTab)",
+      "reason": "Reduces maintenance burden and eliminates risk of divergent behavior"
+    },
+    {
+      "priority": "this_sprint",
+      "action": "Replace `as any` casts in ResourceListPage and ResourceDetailPage with proper types",
+      "reason": "Type safety holes that will cause runtime errors on API changes"
+    },
+    {
+      "priority": "next_sprint",
+      "action": "Evaluate framer-motion dependency — replace trivial animations with CSS, keep only for complex animated transitions",
+      "reason": "Potential ~35KB gzipped bundle savings per page"
+    },
+    {
+      "priority": "next_sprint",
+      "action": "Add refetchIntervalInBackground: false to all TanStack Query polling configs",
+      "reason": "Reduces unnecessary API calls when tab is backgrounded"
+    }
+  ],
+  "estimated_total_effort_minutes": 177
+}

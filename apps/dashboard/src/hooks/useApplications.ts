@@ -73,6 +73,7 @@ export function useApplications() {
       return (result?.items ?? []) as unknown as AppResource[];
     },
     refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -85,5 +86,6 @@ export function useApplication(id: string) {
     },
     enabled: !!id,
     refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
 }

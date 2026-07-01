@@ -1,4 +1,5 @@
 import { useController, useControllerHealth } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   Card,
   CardContent,
@@ -70,6 +71,8 @@ export default function ControllerDetailPage() {
     isLoading,
     error,
   } = useController(id ?? '');
+
+  usePageTitle(controller ? `${controller.name} • Controllers` : 'Controller Detail');
 
   const { data: health } = useControllerHealth(id ?? '');
 

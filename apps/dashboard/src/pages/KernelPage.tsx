@@ -1,4 +1,5 @@
 import { useKernel } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -6,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, Cpu, Activity, Clock, CalendarDays } from 'lucide-react';
 
 export default function KernelPage() {
+  usePageTitle('Kernel');
   const { data, isLoading, error } = useKernel();
 
   return (

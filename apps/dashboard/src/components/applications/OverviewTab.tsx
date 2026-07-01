@@ -1,8 +1,9 @@
 import * as React from 'react';
 import type { AppResource } from '@/hooks/useApplications';
-import { cn, truncate } from '@/lib/utils';
+import { cn, truncate, relativeTime } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { HealthIndicator } from '@/components/ui/health-indicator';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,7 +11,6 @@ import {
   GitCommitHorizontal,
   Terminal,
   Package,
-  Layers,
   Globe,
   Box,
   Clock,
@@ -18,68 +18,19 @@ import {
   Copy,
   ExternalLink,
   Workflow,
+  Layers,
   CheckCircle2,
-  AlertTriangle,
-  XCircle,
   BookOpen,
+  Cloud,
+  Cpu,
 } from 'lucide-react';
 
-/* ── Helpers ──────────────────────────────────────────── */
-
-const healthBadge: Record<
-  string,
-  { variant: 'success' | 'warning' | 'destructive'; label: string }
-> = {
-  Healthy: { variant: 'success', label: 'Healthy' },
-  Degraded: { variant: 'warning', label: 'Degraded' },
-  Error: { variant: 'destructive', label: 'Error' },
-};
-
-const phaseBadge: Record<
-  string,
-  { variant: 'success' | 'warning' | 'secondary' | 'destructive'; label: string }
-> = {
-  Running: { variant: 'success', label: 'Running' },
-  Deploying: { variant: 'warning', label: 'Deploying' },
-  Stopped: { variant: 'secondary', label: 'Stopped' },
-  Failed: { variant: 'destructive', label: 'Failed' },
-};
-
-function copyToClipboard(text: string) {
-  navigator.clipboard.writeText(text).catch(() => {
-    // Clipboard write failed — silently ignore
-  });
-}
-
-function formatDateTime(dateStr?: string): string {
-  if (!dateStr) return '\u2014';
-  try {
-    return new Date(dateStr).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  } catch {
-    return dateStr;
-  }
-}
-
-/* ── Props ────────────────────────────────────────────── */
-
-export interface OverviewTabProps {
-  app: AppResource;
-}
-
 /* ── Copy Button ──────────────────────────────────────── */
-
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = () => {
-    copyToClipboard(text);
+    navigator.clipboard.writeText(text).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -90,12 +41,13 @@ function CopyButton({ text }: { text: string }) {
       onClick={handleCopy}
       className={cn(
         'ml-1.5 inline-flex items-center justify-center rounded p-0.5',
-        'text-muted-foreground/50 hover:text-muted-foreground transition-colors',
+        'text-text-muted hover:text-text-secondary transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
       )}
-      aria-label="Copy to clipboard"
+      aria-label={label ?? 'Copy to clipboard'}
     >
       {copied ? (
-        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+        <CheckCircle2 className="h-3.5 w-3.5 text-success" />
       ) : (
         <Copy className="h-3.5 w-3.5" />
       )}
@@ -104,7 +56,6 @@ function CopyButton({ text }: { text: string }) {
 }
 
 /* ── Detail Row ───────────────────────────────────────── */
-
 interface DetailRowProps {
   icon: React.ReactNode;
   label: string;
@@ -114,12 +65,12 @@ interface DetailRowProps {
 
 function DetailRow({ icon, label, value, copyValue }: DetailRowProps) {
   return (
-    <div className="flex items-start gap-3 py-2">
-      <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
+    <div className="flex items-start gap-3 py-1.5">
+      <span className="mt-0.5 shrink-0 text-text-muted">{icon}</span>
       <div className="min-w-0 flex-1">
-        <span className="block text-xs text-muted-foreground">{label}</span>
-        <span className="mt-0.5 block text-sm font-medium text-foreground/90 break-all">
-          {value}
+        <span className="block text-caption text-text-secondary">{label}</span>
+        <span className="mt-0.5 block text-small font-medium text-foreground break-all">
+          {value ?? '\u2014'}
           {copyValue && <CopyButton text={copyValue} />}
         </span>
       </div>
@@ -127,200 +78,255 @@ function DetailRow({ icon, label, value, copyValue }: DetailRowProps) {
   );
 }
 
-/* ── Component ────────────────────────────────────────── */
+/* ── Status Summary Row ───────────────────────────────── */
+interface StatusRowProps {
+  label: string;
+  children: React.ReactNode;
+}
 
+function StatusRow({ label, children }: StatusRowProps) {
+  return (
+    <div className="flex items-center justify-between rounded-md border border-border bg-surface px-3 py-2.5">
+      <span className="text-small text-text-secondary">{label}</span>
+      <span className="flex items-center gap-1.5">{children}</span>
+    </div>
+  );
+}
+
+/* ── Format helper ────────────────────────────────────── */
+function formatDateTime(dateStr?: string): string {
+  if (!dateStr) return '\u2014';
+  try {
+    return new Date(dateStr).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+/* ── Props ────────────────────────────────────────────── */
+export interface OverviewTabProps {
+  app: AppResource;
+}
+
+/* ── Component ────────────────────────────────────────── */
 export function OverviewTab({ app }: OverviewTabProps) {
   const report = app.status?.lastReport;
   const phase = app.status?.phase ?? 'Stopped';
-  const health = app.status?.health ?? 'Unknown';
   const url = app.status?.url;
   const deploymentCount = app.status?.deploymentCount ?? 0;
-
-  const phaseConf = phaseBadge[phase] ?? phaseBadge.Stopped;
-  const healthConf = healthBadge[health] ?? { variant: 'destructive' as const, label: health };
-
-  const healthIcon = health === 'Healthy'
-    ? <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-    : health === 'Degraded'
-      ? <AlertTriangle className="h-4 w-4 text-amber-400" />
-      : <XCircle className="h-4 w-4 text-red-400" />;
+  const env = app.spec?.settings?.environment ?? report?.environment;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* ──── Deployment Report ──── */}
-      <Card className="border-border/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
-            Deployment Report
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1">
-          {report ? (
-            <>
-              {/* Repository & Branch */}
-              <DetailRow
-                icon={<GitBranch className="h-4 w-4" />}
-                label="Repository"
-                value={report.repository || '\u2014'}
-              />
-              <DetailRow
-                icon={<GitBranch className="h-4 w-4" />}
-                label="Branch"
-                value={report.branch || '\u2014'}
-              />
-              <DetailRow
-                icon={<GitCommitHorizontal className="h-4 w-4" />}
-                label="Commit"
-                value={report.commitSha ? truncate(report.commitSha, 7) : '\u2014'}
-                copyValue={report.commitSha}
-              />
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* ──── LEFT COLUMN ──── */}
 
-              <Separator className="my-2" />
+      {/* Deployment Report */}
+      <div className="space-y-5">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-body font-semibold flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-text-muted" />
+              Deployment Report
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {report ? (
+              <div className="space-y-0.5">
+                <DetailRow
+                  icon={<GitBranch className="h-4 w-4" />}
+                  label="Repository"
+                  value={report.repository || '\u2014'}
+                />
+                <DetailRow
+                  icon={<GitBranch className="h-4 w-4" />}
+                  label="Branch"
+                  value={report.branch || '\u2014'}
+                />
+                <DetailRow
+                  icon={<GitCommitHorizontal className="h-4 w-4" />}
+                  label="Commit"
+                  value={report.commitSha ? truncate(report.commitSha, 7) : '\u2014'}
+                  copyValue={report.commitSha}
+                />
 
-              {/* Runtime */}
-              <DetailRow
-                icon={<Terminal className="h-4 w-4" />}
-                label="Detected Runtime"
-                value={report.detectedRuntime || '\u2014'}
-              />
-              <DetailRow
-                icon={<Package className="h-4 w-4" />}
-                label="Buildpack"
-                value={report.buildpack || '\u2014'}
-              />
-              <DetailRow
-                icon={<Terminal className="h-4 w-4" />}
-                label="Runtime Name"
-                value={report.runtimeName || '\u2014'}
-              />
-              <DetailRow
-                icon={<Terminal className="h-4 w-4" />}
-                label="Runtime Version"
-                value={report.runtimeVersion || '\u2014'}
-              />
+                <Separator className="my-2" />
 
-              <Separator className="my-2" />
+                <DetailRow
+                  icon={<Terminal className="h-4 w-4" />}
+                  label="Detected Runtime"
+                  value={report.detectedRuntime || '\u2014'}
+                />
+                <DetailRow
+                  icon={<Package className="h-4 w-4" />}
+                  label="Buildpack"
+                  value={report.buildpack || '\u2014'}
+                />
+                <DetailRow
+                  icon={<Terminal className="h-4 w-4" />}
+                  label="Runtime Version"
+                  value={report.runtimeVersion || '\u2014'}
+                />
 
-              {/* Environment & Artifact */}
-              <DetailRow
-                icon={<Globe className="h-4 w-4" />}
-                label="Environment"
-                value={report.environment || '\u2014'}
-              />
-              <DetailRow
-                icon={<Box className="h-4 w-4" />}
-                label="Artifact Type"
-                value={report.artifactType || '\u2014'}
-              />
+                <Separator className="my-2" />
 
-              <Separator className="my-2" />
+                <DetailRow
+                  icon={<Globe className="h-4 w-4" />}
+                  label="Environment"
+                  value={report.environment || '\u2014'}
+                />
+                <DetailRow
+                  icon={<Box className="h-4 w-4" />}
+                  label="Artifact Type"
+                  value={report.artifactType || '\u2014'}
+                />
 
-              {/* Workflow */}
-              <DetailRow
-                icon={<Workflow className="h-4 w-4" />}
-                label="Workflow ID"
-                value={report.workflowId || '\u2014'}
-              />
-              <DetailRow
-                icon={<Layers className="h-4 w-4" />}
-                label="Workflow Steps"
-                value={String(report.workflowSteps ?? '\u2014')}
-              />
+                <Separator className="my-2" />
 
-              <Separator className="my-2" />
+                <DetailRow
+                  icon={<Clock className="h-4 w-4" />}
+                  label="Duration"
+                  value={report.duration || '\u2014'}
+                />
+                <DetailRow
+                  icon={<Calendar className="h-4 w-4" />}
+                  label="Started"
+                  value={formatDateTime(report.startedAt)}
+                />
+                <DetailRow
+                  icon={<Calendar className="h-4 w-4" />}
+                  label="Completed"
+                  value={formatDateTime(report.completedAt)}
+                />
+              </div>
+            ) : (
+              <p className="text-small text-text-muted py-4 text-center">
+                No deployment report available.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
-              {/* Timing */}
-              <DetailRow
-                icon={<Clock className="h-4 w-4" />}
-                label="Duration"
-                value={report.duration || '\u2014'}
-              />
-              <DetailRow
-                icon={<Calendar className="h-4 w-4" />}
-                label="Started"
-                value={formatDateTime(report.startedAt)}
-              />
-              <DetailRow
-                icon={<Calendar className="h-4 w-4" />}
-                label="Completed"
-                value={formatDateTime(report.completedAt)}
-              />
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              No deployment report available.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {/* ──── RIGHT COLUMN ──── */}
 
-      {/* ──── Status Summary ──── */}
-      <div className="space-y-6">
-        {/* Phase & Health */}
-        <Card className="border-border/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+      {/* Status Summary */}
+      <div className="space-y-5">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-body font-semibold flex items-center gap-2">
+              <Cloud className="h-4 w-4 text-text-muted" />
               Status Summary
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-2">
             {/* Phase */}
-            <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-4 py-3">
-              <span className="text-sm font-medium text-foreground/80">Phase</span>
-              <Badge variant={phaseConf.variant} className="gap-1.5">
+            <StatusRow label="Phase">
+              <Badge variant={
+                phase === 'Running' ? 'subtle-success' :
+                phase === 'Deploying' ? 'subtle-accent' :
+                phase === 'Failed' ? 'subtle-danger' :
+                'subtle-neutral'
+              } className={cn('gap-1.5', phase === 'Deploying' && 'animate-pulse')}>
                 {phase === 'Deploying' && (
                   <span className="relative flex h-1.5 w-1.5">
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-75" />
                     <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-current" />
                   </span>
                 )}
-                {phaseConf.label}
+                {phase}
               </Badge>
-            </div>
+            </StatusRow>
 
             {/* Health */}
-            <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-4 py-3">
-              <span className="text-sm font-medium text-foreground/80">Health</span>
-              <Badge variant={healthConf.variant} className="gap-1.5">
-                {healthIcon}
-                {healthConf.label}
-              </Badge>
-            </div>
+            <StatusRow label="Health">
+              <HealthIndicator
+                status={
+                  phase === 'Running' ? 'running' :
+                  phase === 'Deploying' ? 'deploying' :
+                  phase === 'Failed' ? 'failed' :
+                  'stopped'
+                }
+                showLabel
+                size="sm"
+              />
+            </StatusRow>
 
             {/* URL */}
             {url && (
-              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-4 py-3">
-                <span className="text-sm font-medium text-foreground/80">URL</span>
-                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" asChild>
+              <StatusRow label="URL">
+                <Button variant="secondary" size="sm" className="h-7 gap-1 text-small" asChild>
                   <a href={url} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-3.5 w-3.5" />
                     Open
                   </a>
                 </Button>
-              </div>
+              </StatusRow>
             )}
 
-            {/* Deployment Count */}
-            <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/30 px-4 py-3">
-              <span className="text-sm font-medium text-foreground/80">Deployments</span>
-              <span className="text-sm font-semibold text-foreground/90">
+            {/* Deployments */}
+            <StatusRow label="Deployments">
+              <span className="text-small font-semibold text-foreground tabular-nums">
                 {deploymentCount}
               </span>
-            </div>
+            </StatusRow>
+
+            {/* Environment */}
+            {env && (
+              <StatusRow label="Environment">
+                <Badge variant="subtle-neutral" className="text-caption uppercase tracking-wider">
+                  {env}
+                </Badge>
+              </StatusRow>
+            )}
           </CardContent>
         </Card>
 
-        {/* Quick resource info */}
-        <Card className="border-border/50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Box className="h-4 w-4 text-muted-foreground" />
+        {/* Workflow Summary */}
+        {report?.workflowId && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-body font-semibold flex items-center gap-2">
+                <Workflow className="h-4 w-4 text-text-muted" />
+                Workflow
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DetailRow
+                icon={<Layers className="h-4 w-4" />}
+                label="Workflow ID"
+                value={report.workflowId}
+              />
+              <DetailRow
+                icon={<Cpu className="h-4 w-4" />}
+                label="Steps"
+                value={String(report.workflowSteps ?? '\u2014')}
+              />
+              {report.warnings && report.warnings.length > 0 && (
+                <DetailRow
+                  icon={<Box className="h-4 w-4" />}
+                  label="Warnings"
+                  value={report.warnings.length}
+                />
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Resource Info */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-body font-semibold flex items-center gap-2">
+              <Box className="h-4 w-4 text-text-muted" />
               Resource Info
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1">
+          <CardContent>
             <DetailRow
               icon={<BookOpen className="h-4 w-4" />}
               label="API Version"
@@ -333,7 +339,7 @@ export function OverviewTab({ app }: OverviewTabProps) {
             />
             <DetailRow
               icon={<Terminal className="h-4 w-4" />}
-              label="Runtime Type"
+              label="Runtime"
               value={app.spec?.runtime?.type || '\u2014'}
             />
             <DetailRow

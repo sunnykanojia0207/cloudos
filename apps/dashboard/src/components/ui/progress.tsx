@@ -4,12 +4,20 @@ import { cn } from '@/lib/utils';
 interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
   value?: number;
   max?: number;
-  indicatorClassName?: string;
+  variant?: 'default' | 'success' | 'warning' | 'danger';
 }
 
 const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
-  ({ className, value = 0, max = 100, indicatorClassName, ...props }, ref) => {
-    const percentage = Math.min(Math.max(0, (value / max) * 100), 100);
+  ({ className, value = 0, max = 100, variant = 'default', ...props }, ref) => {
+    const pct = Math.min(Math.max((value / max) * 100, 0), 100);
+    const barColor =
+      variant === 'success'
+        ? 'bg-success'
+        : variant === 'warning'
+          ? 'bg-warning'
+          : variant === 'danger'
+            ? 'bg-danger'
+            : 'bg-accent';
 
     return (
       <div
@@ -18,20 +26,15 @@ const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
         aria-valuenow={value}
         aria-valuemin={0}
         aria-valuemax={max}
-        data-value={value}
-        data-max={max}
         className={cn(
-          'relative h-4 w-full overflow-hidden rounded-full bg-secondary',
+          'h-1.5 w-full overflow-hidden rounded-full bg-surface-elevated',
           className,
         )}
         {...props}
       >
         <div
-          className={cn(
-            'h-full w-full flex-1 bg-primary transition-all duration-500 ease-in-out',
-            indicatorClassName,
-          )}
-          style={{ width: `${percentage}%` }}
+          className={cn('h-full rounded-full transition-all duration-normal ease-standard', barColor)}
+          style={{ width: `${pct}%` }}
         />
       </div>
     );

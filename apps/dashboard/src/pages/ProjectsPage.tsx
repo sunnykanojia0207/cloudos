@@ -12,6 +12,7 @@ import {
   SortAsc,
 } from 'lucide-react';
 import { useProjects } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
 import { Button } from '@/components/ui/button';
@@ -416,6 +417,7 @@ function ViewToggle({
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function ProjectsPage() {
+  usePageTitle('Projects');
   // ── Data ──
   const { data, isLoading, error, refetch } = useProjects();
   const projects = data?.items ?? [];

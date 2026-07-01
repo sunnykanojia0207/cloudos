@@ -8,6 +8,7 @@ export function useHealth() {
     queryKey: ['health'],
     queryFn: () => cloudos.getHealth(),
     refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -24,6 +25,7 @@ export function useKernel() {
     queryKey: ['kernel'],
     queryFn: () => cloudos.getKernel(),
     refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -40,6 +42,7 @@ export function useReady() {
     queryKey: ['ready'],
     queryFn: () => cloudos.getReady(),
     refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -48,6 +51,7 @@ export function useLive() {
     queryKey: ['live'],
     queryFn: () => cloudos.getLive(),
     refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -131,6 +135,7 @@ export function useControllers() {
     queryFn: () => cloudos.getControllers(),
     staleTime: 30_000,
     refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -149,6 +154,7 @@ export function useControllerHealth(id: string) {
     queryFn: () => cloudos.getControllerHealth(id),
     enabled: !!id,
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -160,6 +166,7 @@ export function useProjects() {
     queryFn: () => cloudos.getProjects(),
     staleTime: 10_000,
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -170,6 +177,7 @@ export function useProject(id: string) {
     enabled: !!id,
     staleTime: 10_000,
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   });
 }
 

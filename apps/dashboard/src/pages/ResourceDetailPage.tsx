@@ -1,5 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { useResource } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   Card,
   CardContent,
@@ -18,14 +19,17 @@ import {
   Hash,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import type { ResourceObject, ResourceSpec, ResourceStatus, ResourceMeta } from '@cloudos/sdk';
 
 export default function ResourceDetailPage() {
   const { kind, id } = useParams<{ kind: string; id: string }>();
+  usePageTitle(id ? `${id} • ${kind} • Resources` : 'Resource Detail');
   const { data, isLoading, error } = useResource(kind ?? '', id ?? '');
 
-  const meta = (data as any)?.metadata ?? {};
-  const spec = (data as any)?.spec ?? {};
-  const status = (data as any)?.status ?? {};
+  const resource = data as ResourceObject<ResourceSpec, ResourceStatus> | undefined;
+  const meta = resource?.metadata ?? ({} as ResourceMeta);
+  const spec = resource?.spec ?? ({} as ResourceSpec);
+  const status = resource?.status ?? ({} as ResourceStatus);
 
   return (
     <div className="space-y-6">

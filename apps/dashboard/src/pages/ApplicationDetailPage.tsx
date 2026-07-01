@@ -1,250 +1,266 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useApplication } from '@/hooks/useApplications';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { useApplication, useApplications } from '@/hooks/useApplications';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { useTimeline } from '@/hooks/useDeployments';
 import { OverviewTab } from '@/components/applications/OverviewTab';
 import { DeploymentsTab } from '@/components/applications/DeploymentsTab';
 import { TimelineTab } from '@/components/applications/TimelineTab';
 import { LogsTab } from '@/components/applications/LogsTab';
+import { WorkflowTab } from '@/components/applications/WorkflowTab';
+import { MonitoringTab } from '@/components/applications/MonitoringTab';
 import { SettingsTab } from '@/components/applications/SettingsTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { HealthIndicator } from '@/components/ui/health-indicator';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ErrorState } from '@/components/ui/error-state';
+import { Separator } from '@/components/ui/separator';
 import {
   ArrowLeft,
   ExternalLink,
-  AlertCircle,
-  RotateCcw,
-  Globe,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
+  Rocket,
   BookOpen,
   Layers,
   Terminal,
-  Settings,
   Activity,
+  Heart,
+  Monitor,
+  Settings,
+  Globe,
+  GitBranch,
+  GitCommitHorizontal,
+  Clock,
+  Box,
+  History,
+  ChevronRight,
+  AlertCircle,
 } from 'lucide-react';
-import { motion, type Variants } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { cn, relativeTime, truncate } from '@/lib/utils';
 
-// ── Animation Variants ────────────────────────────────────────────────────
-
-const containerVariants: Variants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.06 },
-  },
-};
-
-const fadeUpVariants: Variants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.4, ease: [0.25, 0.1, 0.25, 1] },
-  },
-};
-
-const tabContentVariants: Variants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.3, ease: [0.25, 0.1, 0.25, 1] },
-  },
-};
-
-// ── Tab configuration ─────────────────────────────────────────────────────
-
+/* ── Tab config ─────────────────────────────────────────── */
 const APP_TABS = [
-  { value: 'overview', label: 'Overview', icon: BookOpen },
+  { value: 'overview',    label: 'Overview',    icon: BookOpen },
   { value: 'deployments', label: 'Deployments', icon: Layers },
-  { value: 'timeline', label: 'Timeline', icon: Activity },
-  { value: 'logs', label: 'Logs', icon: Terminal },
-  { value: 'settings', label: 'Settings', icon: Settings },
+  { value: 'timeline',    label: 'Timeline',    icon: Activity },
+  { value: 'logs',        label: 'Logs',        icon: Terminal },
+  { value: 'workflow',    label: 'Workflow',    icon: Heart },
+  { value: 'monitoring',  label: 'Monitoring',  icon: Monitor },
+  { value: 'settings',    label: 'Settings',    icon: Settings },
 ] as const;
 
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-const phaseBadge: Record<
-  string,
-  { variant: 'success' | 'warning' | 'secondary' | 'destructive'; label: string }
-> = {
-  Running: { variant: 'success', label: 'Running' },
-  Deploying: { variant: 'warning', label: 'Deploying' },
-  Stopped: { variant: 'secondary', label: 'Stopped' },
-  Failed: { variant: 'destructive', label: 'Failed' },
-};
-
-const healthBadge: Record<
-  string,
-  { variant: 'success' | 'warning' | 'destructive'; label: string }
-> = {
-  Healthy: { variant: 'success', label: 'Healthy' },
-  Degraded: { variant: 'warning', label: 'Degraded' },
-  Error: { variant: 'destructive', label: 'Error' },
-};
-
-function getHealthIcon(health: string) {
-  switch (health) {
-    case 'Healthy':
-      return <CheckCircle2 className="h-3.5 w-3.5" />;
-    case 'Degraded':
-      return <AlertTriangle className="h-3.5 w-3.5" />;
-    case 'Error':
-      return <XCircle className="h-3.5 w-3.5" />;
-    default:
-      return <AlertCircle className="h-3.5 w-3.5" />;
+/* ── Helpers ────────────────────────────────────────────── */
+function phaseToHealth(phase: string) {
+  switch (phase) {
+    case 'Running':   return 'running' as const;
+    case 'Deploying': return 'deploying' as const;
+    case 'Failed':    return 'failed' as const;
+    case 'Stopped':   return 'stopped' as const;
+    default:          return 'stopped' as const;
   }
 }
 
-// ── Loading Skeleton ──────────────────────────────────────────────────────
-
+/* ── Loading Skeleton ───────────────────────────────────── */
 function PageSkeleton() {
   return (
-    <div className="space-y-6">
-      {/* Breadcrumb skeleton */}
+    <div className="flex flex-col gap-6">
+      {/* Breadcrumb */}
       <Skeleton className="h-4 w-40" />
 
-      {/* Header skeleton */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      {/* Summary bar */}
+      <div className="flex flex-col gap-4">
         <div className="flex items-start gap-4">
           <Skeleton className="h-9 w-9 rounded-md shrink-0" />
-          <div className="space-y-2">
-            <Skeleton className="h-8 w-56" />
-            <div className="flex items-center gap-2 pt-1">
-              <Skeleton className="h-5 w-20 rounded-full" />
-              <Skeleton className="h-5 w-24 rounded-full" />
-            </div>
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-7 w-56" />
+            <Skeleton className="h-4 w-80" />
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <Skeleton className="h-8 w-28 rounded-md" />
+            <Skeleton className="h-8 w-28 rounded-md" />
           </div>
         </div>
-        <Skeleton className="h-9 w-24 rounded-md" />
       </div>
 
-      {/* Tabs skeleton */}
-      <Skeleton className="h-10 w-full rounded-md" />
+      {/* Tabs + Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-full rounded-md" />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Skeleton className="h-64 rounded-md" />
+            <Skeleton className="h-64 rounded-md" />
+          </div>
+        </div>
 
-      {/* Content skeleton */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-border/50">
-          <CardHeader className="pb-3">
-            <Skeleton className="h-5 w-40" />
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <Skeleton className="mt-0.5 h-4 w-4 rounded" />
-                <div className="flex-1 space-y-1">
-                  <Skeleton className="h-3 w-20" />
-                  <Skeleton className="h-4 w-40" />
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-        <div className="space-y-6">
-          <Card className="border-border/50">
-            <CardHeader className="pb-3">
-              <Skeleton className="h-5 w-32" />
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full rounded-lg" />
-              ))}
-            </CardContent>
-          </Card>
+        {/* Right panel skeleton */}
+        <div className="space-y-4">
+          <Skeleton className="h-48 rounded-md" />
+          <Skeleton className="h-32 rounded-md" />
         </div>
       </div>
     </div>
   );
 }
 
-// ── Not Found State ──────────────────────────────────────────────────────
-
+/* ── Not Found State ────────────────────────────────────── */
 function NotFoundState({ appId }: { appId: string }) {
   return (
-    <motion.div
-      variants={fadeUpVariants}
-      initial="hidden"
-      animate="visible"
-      className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/40 bg-card/10 px-6 py-20 text-center"
-    >
-      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-border/40 bg-muted/30">
-        <Globe className="h-7 w-7 text-muted-foreground/50" />
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-20 text-center">
+      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-surface-elevated">
+        <Box className="h-7 w-7 text-text-muted" />
       </div>
-      <h3 className="mb-1.5 text-lg font-semibold tracking-tight text-foreground/90">
-        Application not found
-      </h3>
-      <p className="mb-6 max-w-sm text-sm leading-relaxed text-muted-foreground">
-        The application <span className="font-mono text-xs text-foreground/60">{appId}</span> could not be
+      <h3 className="mb-1.5 text-h3 text-foreground">Application not found</h3>
+      <p className="mb-6 max-w-sm text-small text-text-secondary">
+        The application <span className="font-mono text-code text-text-muted">{appId}</span> could not be
         found. It may have been removed or the URL may be incorrect.
       </p>
-      <Button variant="outline" size="sm" className="gap-1.5" asChild>
+      <Button variant="secondary" size="sm" className="gap-1.5" asChild>
         <Link to="/applications">
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to Applications
         </Link>
       </Button>
-    </motion.div>
+    </div>
   );
 }
 
-// ── Error State ──────────────────────────────────────────────────────────
+/* ── Right Panel ────────────────────────────────────────── */
+function RightPanel({ appId }: { appId: string }) {
+  const { data: app } = useApplication(appId);
+  const { data: allApps } = useApplications();
 
-function ErrorState({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry: () => void;
-}) {
-  return (
-    <motion.div
-      variants={fadeUpVariants}
-      initial="hidden"
-      animate="visible"
-      className="space-y-4"
-    >
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-red-500/20 bg-red-500/5 px-6 py-16 text-center">
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10">
-          <AlertCircle className="h-6 w-6 text-red-400" />
-        </div>
-        <h3 className="mb-1.5 text-base font-semibold text-foreground/90">
-          Failed to load application
-        </h3>
-        <p className="mb-4 max-w-md text-sm text-muted-foreground">
-          {message}
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={onRetry}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Retry
-          </Button>
-          <Button variant="ghost" size="sm" className="gap-1.5" asChild>
-            <Link to="/applications">
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to Applications
-            </Link>
-          </Button>
-        </div>
+  if (!app) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-48 rounded-md" />
+        <Skeleton className="h-32 rounded-md" />
       </div>
-    </motion.div>
+    );
+  }
+
+  const phase = app.status?.phase ?? 'Stopped';
+  const health = app.status?.health ?? 'Unknown';
+  const url = app.status?.url;
+  const lastReport = app.status?.lastReport;
+  const deploymentCount = app.status?.deploymentCount ?? 0;
+  const runtime = app.spec?.runtime?.type ?? lastReport?.detectedRuntime;
+
+  // Recent activity: last 3 deployment reports + other apps for context
+  const history = app.status?.deploymentHistory ?? [];
+  const recentDeployments = [...history]
+    .sort((a, b) => b.deploymentNumber - a.deploymentNumber)
+    .slice(0, 3);
+
+  return (
+    <aside className="space-y-4" aria-label="Application quick summary">
+      {/* ── Quick Summary Card ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-small font-semibold text-text-secondary flex items-center gap-1.5">
+            <Box className="h-3.5 w-3.5" />
+            Quick Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Health */}
+          <div className="flex items-center justify-between">
+            <span className="text-small text-text-secondary">Health</span>
+            <HealthIndicator status={phaseToHealth(phase)} showLabel size="sm" />
+          </div>
+
+          {/* Status */}
+          <div className="flex items-center justify-between">
+            <span className="text-small text-text-secondary">Status</span>
+            <Badge variant={
+              phase === 'Running' ? 'subtle-success' :
+              phase === 'Deploying' ? 'subtle-accent' :
+              phase === 'Failed' ? 'subtle-danger' :
+              'subtle-neutral'
+            } className="text-caption font-medium">
+              {phase}
+            </Badge>
+          </div>
+
+          {/* Runtime */}
+          {runtime && (
+            <div className="flex items-center justify-between">
+              <span className="text-small text-text-secondary">Runtime</span>
+              <span className="text-small text-foreground font-medium">{runtime}</span>
+            </div>
+          )}
+
+          {/* Deployment # */}
+          <div className="flex items-center justify-between">
+            <span className="text-small text-text-secondary">Deployments</span>
+            <span className="text-small text-foreground font-medium tabular-nums">{deploymentCount}</span>
+          </div>
+
+          {/* URL */}
+          {url && (
+            <div className="flex items-center justify-between min-w-0">
+              <span className="text-small text-text-secondary shrink-0 mr-2">URL</span>
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-small text-accent hover:text-accent-hover truncate inline-flex items-center gap-1 min-w-0"
+              >
+                <span className="truncate">{truncate(url.replace(/^https?:\/\//, ''), 20)}</span>
+                <ExternalLink className="h-3 w-3 shrink-0" />
+              </a>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Recent Activity ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-small font-semibold text-text-secondary flex items-center gap-1.5">
+            <History className="h-3.5 w-3.5" />
+            Recent Activity
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recentDeployments.length === 0 ? (
+            <p className="text-small text-text-muted py-2 text-center">
+              No recent deployments
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {recentDeployments.map((dep) => (
+                <div key={dep.deploymentNumber} className="flex items-center gap-2 min-w-0">
+                  <div className={cn(
+                    'h-2 w-2 shrink-0 rounded-full',
+                    dep.buildSuccess ? 'bg-success' : 'bg-danger',
+                  )} aria-hidden="true" />
+                  <span className="text-caption text-text-muted tabular-nums shrink-0">
+                    #{dep.deploymentNumber}
+                  </span>
+                  <span className="text-caption text-text-muted shrink-0">
+                    {dep.duration}
+                  </span>
+                  <span className="text-caption text-text-muted truncate">
+                    {relativeTime(dep.startedAt)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </aside>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────
-
+/* ── Main Page ──────────────────────────────────────────── */
 export default function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
   const {
     data: app,
@@ -253,6 +269,8 @@ export default function ApplicationDetailPage() {
     refetch,
   } = useApplication(id ?? '');
 
+  usePageTitle(app ? `${app.metadata.name} • Applications` : 'Application Detail');
+
   const {
     data: timelineData,
     isLoading: timelineLoading,
@@ -260,63 +278,51 @@ export default function ApplicationDetailPage() {
 
   const [activeTab, setActiveTab] = useState('overview');
 
-  // ── Guard: no application ID ──
+  // ── Guard: no ID ──
   if (!id) {
     return (
-      <motion.div
-        className="flex flex-col gap-6 p-6"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/40 bg-card/10 px-6 py-20 text-center">
-          <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-border/40 bg-muted/30">
-            <AlertCircle className="h-7 w-7 text-muted-foreground/50" />
-          </div>
-          <h3 className="mb-1.5 text-lg font-semibold tracking-tight text-foreground/90">
-            Missing application ID
-          </h3>
-          <p className="mb-6 max-w-sm text-sm leading-relaxed text-muted-foreground">
-            No application ID was provided in the URL.
-          </p>
-          <Button variant="outline" size="sm" className="gap-1.5" asChild>
-            <Link to="/applications">
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to Applications
-            </Link>
-          </Button>
-        </div>
-      </motion.div>
+      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface px-6 py-20 text-center">
+        <AlertCircle className="h-10 w-10 text-text-muted mb-4" />
+        <h3 className="text-h3 text-foreground mb-1.5">Missing application ID</h3>
+        <p className="text-small text-text-secondary mb-6 max-w-sm">
+          No application ID was provided in the URL.
+        </p>
+        <Button variant="secondary" size="sm" className="gap-1.5" asChild>
+          <Link to="/applications">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Applications
+          </Link>
+        </Button>
+      </div>
     );
   }
 
-  // ── Loading state ──
+  // ── Loading ──
   if (isLoading) {
     return (
       <motion.div
-        className="flex flex-col gap-6 p-6"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex flex-col gap-6"
       >
         <PageSkeleton />
       </motion.div>
     );
   }
 
-  // ── Error state ──
+  // ── Error ──
   if (error) {
     return (
       <motion.div
-        className="flex flex-col gap-6 p-6"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex flex-col gap-6"
       >
         <ErrorState
+          title="Failed to load application"
           message={
             (error as Error)?.message ||
-            'An unexpected error occurred while loading the application.'
+            'An unexpected error occurred while loading the application. Ensure the CloudOS kernel is running.'
           }
           onRetry={() => refetch()}
         />
@@ -324,247 +330,191 @@ export default function ApplicationDetailPage() {
     );
   }
 
-  // ── Not found state ──
+  // ── Not found ──
   if (!app) {
     return (
       <motion.div
-        className="flex flex-col gap-6 p-6"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex flex-col gap-6"
       >
         <NotFoundState appId={id} />
       </motion.div>
     );
   }
 
+  // ── Derived data ──
   const phase = app.status?.phase ?? 'Stopped';
   const health = app.status?.health ?? 'Unknown';
-  const phaseConf = phaseBadge[phase] ?? phaseBadge.Stopped;
-  const healthConf = healthBadge[health] ?? { variant: 'secondary' as const, label: health };
   const url = app.status?.url;
+  const repoUrl = app.spec?.source?.url;
+  const branch = app.spec?.source?.branch ?? app.status?.lastReport?.branch;
+  const commitSha = app.status?.lastReport?.commitSha;
+  const env = app.spec?.settings?.environment ?? app.status?.lastReport?.environment;
+  const runtimeType = app.spec?.runtime?.type ?? app.status?.lastReport?.detectedRuntime;
   const deploymentHistory = app.status?.deploymentHistory ?? [];
 
   return (
     <motion.div
-      className="flex flex-col gap-6 p-6"
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="flex flex-col gap-6"
     >
-      {/* ── Breadcrumb ─────────────────────────────────────────────── */}
-      <motion.nav
-        variants={fadeUpVariants}
-        className="flex items-center gap-2 text-sm text-muted-foreground"
-        aria-label="Breadcrumb"
-      >
-        <Link
-          to="/applications"
-          className="hover:text-foreground transition-colors"
-        >
+      {/* ════════════════════ BREADCRUMB ════════════════════ */}
+      <nav className="flex items-center gap-1.5 text-small text-text-secondary" aria-label="Breadcrumb">
+        <Link to="/applications" className="hover:text-foreground transition-colors">
           Applications
         </Link>
-        <span className="text-muted-foreground/40" aria-hidden="true">
-          /
-        </span>
-        <span className="text-foreground/80 font-medium truncate max-w-[200px] sm:max-w-[400px]">
+        <ChevronRight className="h-3.5 w-3.5 text-text-muted" aria-hidden="true" />
+        <span className="text-foreground font-medium truncate max-w-[300px]">
           {app.metadata.name}
         </span>
-      </motion.nav>
+      </nav>
 
-      {/* ── Page Header ────────────────────────────────────────────── */}
-      <motion.div
-        variants={fadeUpVariants}
-        className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
-      >
-        {/* Left: Back + Title + Meta */}
-        <div className="flex items-start gap-4 min-w-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="mt-0.5 shrink-0"
-            asChild
-          >
-            <Link to="/applications" aria-label="Back to applications">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-
-          <div className="min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl truncate">
-                {app.metadata.name}
-              </h1>
-
-              {/* Phase badge */}
-              <Badge
-                variant={phaseConf.variant}
-                className={cn(
-                  'gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium',
-                  phase === 'Deploying' && 'animate-pulse',
-                )}
-              >
-                {phase === 'Deploying' && (
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-75" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-current" />
-                  </span>
-                )}
-                {phaseConf.label}
-              </Badge>
-
-              {/* Health badge */}
-              <Badge
-                variant={healthConf.variant}
-                className="gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-              >
-                {getHealthIcon(health)}
-                {healthConf.label}
-              </Badge>
-            </div>
-
-            <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
-              <span className="font-mono text-xs text-muted-foreground/60">
-                {app.metadata.id}
-              </span>
-              {url && (
-                <>
-                  <span
-                    className="h-3 w-px bg-border/40"
-                    aria-hidden="true"
-                  />
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                    Open app
-                  </a>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Desktop external link */}
-        {url && (
-          <div className="hidden sm:flex items-center gap-2">
+      {/* ════════════════════ TOP SUMMARY BAR ════════════════ */}
+      <div className="flex flex-col gap-4">
+        {/* Row 1: Back + Name + Badges + Buttons */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
             <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
+              variant="icon-ghost"
+              size="icon-sm"
+              className="mt-0.5 shrink-0"
               asChild
             >
-              <a href={url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="h-3.5 w-3.5" />
-                Open Application
-              </a>
+              <Link to="/applications" aria-label="Back to applications">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+
+            <div className="min-w-0 flex-1">
+              {/* Name row */}
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="text-h1 text-foreground truncate">
+                  {app.metadata.name}
+                </h1>
+
+                {/* Environment badge */}
+                {env && (
+                  <Badge variant="subtle-neutral" className="text-caption uppercase tracking-wider font-medium">
+                    {env}
+                  </Badge>
+                )}
+
+                {/* Runtime */}
+                {runtimeType && (
+                  <span className="hidden sm:inline-flex items-center gap-1 text-small text-text-secondary">
+                    <Terminal className="h-3.5 w-3.5" />
+                    {runtimeType}
+                  </span>
+                )}
+              </div>
+
+              {/* Meta row: ID + repo + branch + commit */}
+              <div className="flex items-center gap-3 mt-1 flex-wrap text-small text-text-muted">
+                <span className="font-mono text-code-sm">{app.metadata.id}</span>
+
+                {repoUrl && (
+                  <span className="inline-flex items-center gap-1 min-w-0">
+                    <Globe className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{truncate(repoUrl.replace(/^https?:\/\//, ''), 35)}</span>
+                  </span>
+                )}
+
+                {branch && (
+                  <span className="inline-flex items-center gap-1">
+                    <GitBranch className="h-3.5 w-3.5 shrink-0" />
+                    {branch}
+                  </span>
+                )}
+
+                {commitSha && (
+                  <span className="inline-flex items-center gap-1 font-mono text-code-sm">
+                    <GitCommitHorizontal className="h-3.5 w-3.5" />
+                    {truncate(commitSha, 7)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Phase + Health indicators (desktop) */}
+            <div className="hidden md:flex items-center gap-2 mr-1">
+              <HealthIndicator status={phaseToHealth(phase)} showLabel size="sm" />
+            </div>
+
+            {url && (
+              <Button variant="secondary" size="sm" className="gap-1.5" asChild>
+                <a href={url} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open
+                </a>
+              </Button>
+            )}
+            <Button variant="primary" size="sm" className="gap-1.5">
+              <Rocket className="h-3.5 w-3.5" />
+              Deploy
             </Button>
           </div>
-        )}
-      </motion.div>
+        </div>
+      </div>
 
-      {/* ── Tab Navigation ─────────────────────────────────────────── */}
-      <motion.div variants={fadeUpVariants}>
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <div className="overflow-x-auto -mx-4 px-4">
-            <TabsList className="mb-1 h-auto w-full justify-start overflow-x-auto rounded-none bg-transparent p-0">
-              {APP_TABS.map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <TabsTrigger
-                    key={tab.value}
-                    value={tab.value}
-                    className={cn(
-                      'relative inline-flex items-center gap-1.5 rounded-none border-b-2 px-4 py-2.5 text-xs font-medium transition-colors',
-                      'data-[state=active]:border-primary data-[state=active]:text-foreground',
-                      'data-[state=inactive]:border-transparent data-[state=inactive]:text-muted-foreground data-[state=inactive]:hover:text-foreground/70',
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {tab.label}
-                  </TabsTrigger>
-                );
-              })}
-            </TabsList>
+      {/* ════════════════════ MAIN CONTENT ════════════════════ */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">
+        {/* ── Left: Tabs ── */}
+        <div className="min-w-0">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <div className="overflow-x-auto -mx-1">
+              <TabsList className="mb-0 h-auto w-full justify-start overflow-x-auto rounded-none bg-transparent p-0 border-b border-border gap-0">
+                {APP_TABS.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      className={cn(
+                        'relative inline-flex items-center gap-1.5 rounded-none px-3 py-2.5 text-small font-medium transition-colors shrink-0',
+                        'data-[state=active]:text-foreground data-[state=active]:after:absolute data-[state=active]:after:bottom-0 data-[state=active]:after:left-0 data-[state=active]:after:right-0 data-[state=active]:after:h-0.5 data-[state=active]:after:bg-accent',
+                        'data-[state=inactive]:text-text-secondary data-[state=inactive]:hover:text-foreground',
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {tab.label}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            </div>
+
+            {/* Tab content */}
+            <div className="pt-5">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15, ease: [0, 0, 0.2, 1] }}
+              >
+                <TabsContent value="overview"><OverviewTab app={app} /></TabsContent>
+                <TabsContent value="deployments"><DeploymentsTab appId={id} deploymentHistory={deploymentHistory} /></TabsContent>
+                <TabsContent value="timeline"><TimelineTab timeline={timelineData} loading={timelineLoading} /></TabsContent>
+                <TabsContent value="logs"><LogsTab appId={id} /></TabsContent>
+                <TabsContent value="workflow"><WorkflowTab app={app} /></TabsContent>
+                <TabsContent value="monitoring"><MonitoringTab app={app} /></TabsContent>
+                <TabsContent value="settings"><SettingsTab app={app} /></TabsContent>
+              </motion.div>
+            </div>
+          </Tabs>
+        </div>
+
+        {/* ── Right: Panel ── */}
+        <div className="hidden lg:block">
+          <div className="sticky top-6">
+            <RightPanel appId={id} />
           </div>
-
-          <div className="h-px bg-border/30" />
-
-          {/* ── Overview Tab ──────────────────────────────────────── */}
-          <TabsContent value="overview">
-            <motion.div
-              key="overview"
-              variants={tabContentVariants}
-              initial="hidden"
-              animate="visible"
-              className="pt-6"
-            >
-              <OverviewTab app={app} />
-            </motion.div>
-          </TabsContent>
-
-          {/* ── Deployments Tab ───────────────────────────────────── */}
-          <TabsContent value="deployments">
-            <motion.div
-              key="deployments"
-              variants={tabContentVariants}
-              initial="hidden"
-              animate="visible"
-              className="pt-6"
-            >
-              <DeploymentsTab
-                appId={id}
-                deploymentHistory={deploymentHistory}
-              />
-            </motion.div>
-          </TabsContent>
-
-          {/* ── Timeline Tab ──────────────────────────────────────── */}
-          <TabsContent value="timeline">
-            <motion.div
-              key="timeline"
-              variants={tabContentVariants}
-              initial="hidden"
-              animate="visible"
-              className="pt-6"
-            >
-              <TimelineTab
-                timeline={timelineData}
-                loading={timelineLoading}
-              />
-            </motion.div>
-          </TabsContent>
-
-          {/* ── Logs Tab ──────────────────────────────────────────── */}
-          <TabsContent value="logs">
-            <motion.div
-              key="logs"
-              variants={tabContentVariants}
-              initial="hidden"
-              animate="visible"
-              className="pt-6"
-            >
-              <LogsTab appId={id} />
-            </motion.div>
-          </TabsContent>
-
-          {/* ── Settings Tab ──────────────────────────────────────── */}
-          <TabsContent value="settings">
-            <motion.div
-              key="settings"
-              variants={tabContentVariants}
-              initial="hidden"
-              animate="visible"
-              className="pt-6"
-            >
-              <SettingsTab app={app} />
-            </motion.div>
-          </TabsContent>
-        </Tabs>
-      </motion.div>
+        </div>
+      </div>
     </motion.div>
   );
 }

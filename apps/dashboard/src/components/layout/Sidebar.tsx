@@ -1,40 +1,31 @@
 import { NavLink } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard,
-  Folder,
-  Database,
-  Activity,
-  Boxes,
-  ShieldCheck,
+  Box,
+  GitBranch,
+  Heart,
+  GitMerge,
   Cpu,
-  Server,
+  Settings,
   Puzzle,
-  Settings2,
   ChevronLeft,
   ChevronRight,
   Sun,
   Moon,
   Monitor,
-  AppWindow,
-  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme/ThemeProvider';
-import { useProjects } from '@/hooks/useCloudOS';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useVersion } from '@/hooks/useCloudOS';
 
 /* ── Types ────────────────────────────────────────────────── */
 interface NavItem {
   label: string;
   to: string;
-  icon: LucideIcon;
-  badge?: 'projects' | 'none';
+  icon: React.ElementType;
 }
 
 interface NavGroup {
-  label: string;
   items: NavItem[];
 }
 
@@ -44,43 +35,30 @@ interface SidebarProps {
   className?: string;
 }
 
-/* ── Navigation groups ────────────────────────────────────── */
+/* ── Navigation items (matching design system spec) ──────── */
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: 'General',
     items: [
-      { label: 'Applications', to: '/', icon: AppWindow },
-      { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
-      { label: 'Projects', to: '/projects', icon: Folder, badge: 'projects' },
+      { label: 'Applications', to: '/', icon: Box },
+      { label: 'Deployments', to: '/deployments', icon: GitBranch },
     ],
   },
   {
-    label: 'Infrastructure',
     items: [
-      { label: 'Resources', to: '/resources', icon: Database },
-      { label: 'Controllers', to: '/controllers', icon: Activity },
-      { label: 'Capabilities', to: '/capabilities', icon: Boxes },
-      { label: 'Providers', to: '/providers', icon: ShieldCheck },
+      { label: 'Monitoring', to: '/monitoring', icon: Heart },
+      { label: 'Workflows', to: '/workflows', icon: GitMerge },
     ],
   },
   {
-    label: 'System',
     items: [
-      { label: 'Kernel', to: '/kernel', icon: Cpu },
-      { label: 'System', to: '/system', icon: Server },
+      { label: 'System', to: '/system', icon: Cpu },
+      { label: 'Settings', to: '/settings', icon: Settings },
       { label: 'Plugins', to: '/plugins', icon: Puzzle },
-    ],
-  },
-  {
-    label: 'Settings',
-    items: [
-      { label: 'Settings', to: '/settings', icon: Settings2 },
     ],
   },
 ];
 
-/* ── Sub-components ───────────────────────────────────────── */
-
+/* ── Sidebar Nav Item ─────────────────────────────────────── */
 function SidebarNavItem({
   item,
   collapsed,
@@ -88,33 +66,24 @@ function SidebarNavItem({
   item: NavItem;
   collapsed: boolean;
 }) {
-  const { data: projects, isLoading: projectsLoading } = useProjects();
-
-  const badgeCount =
-    item.badge === 'projects'
-      ? projects?.items?.length ?? 0
-      : null;
-
   return (
     <div className={cn(collapsed && 'group relative flex justify-center')}>
       <NavLink
         to={item.to}
         end={item.to === '/'}
-        className={({ isActive }: { isActive: boolean }) =>
+        className={({ isActive }) =>
           cn(
-            'relative flex items-center rounded-md text-sm font-medium transition-all duration-150',
+            'relative flex items-center rounded-sm transition-all duration-100',
             collapsed
-              ? 'justify-center px-0 py-2 mx-auto w-10'
-              : 'gap-3 px-3 py-2',
-            isActive
-              ? 'bg-sidebar-accent text-foreground'
-              : 'text-sidebar-foreground hover:bg-sidebar-muted hover:text-foreground/80',
+              ? 'justify-center mx-auto w-9 h-9'
+              : 'gap-2 px-4 py-2',
+            'text-sidebar text-text-secondary hover:text-foreground',
+            isActive && 'bg-accent-subtle text-accent',
           )
         }
+        aria-label={collapsed ? item.label : undefined}
       >
-        <item.icon
-          className={cn('h-4 w-4 shrink-0', collapsed && 'h-5 w-5')}
-        />
+        <item.icon className="h-4 w-4 shrink-0" />
         <AnimatePresence mode="wait">
           {!collapsed && (
             <motion.span
@@ -128,27 +97,11 @@ function SidebarNavItem({
             </motion.span>
           )}
         </AnimatePresence>
-
-        {/* Badge / skeleton */}
-        {!collapsed && badgeCount !== null && (
-          <span className="ml-auto">
-            {projectsLoading ? (
-              <Skeleton className="h-4 w-6 rounded-full" />
-            ) : (
-              <Badge
-                variant="secondary"
-                className="h-4 min-w-[1.25rem] rounded-full px-1.5 text-[10px] font-medium leading-none"
-              >
-                {badgeCount}
-              </Badge>
-            )}
-          </span>
-        )}
       </NavLink>
 
-      {/* Inline tooltip for collapsed mode */}
+      {/* Tooltip for collapsed mode */}
       {collapsed && (
-        <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-md border bg-popover px-2.5 py-1 text-xs text-popover-foreground shadow-md opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-sm border border-border bg-surface-elevated px-2.5 py-1 text-caption text-foreground shadow-md opacity-0 transition-opacity duration-150 group-hover:opacity-100">
           {item.label}
         </div>
       )}
@@ -156,56 +109,19 @@ function SidebarNavItem({
   );
 }
 
-function SidebarGroup({
-  group,
-  collapsed,
-}: {
-  group: NavGroup;
-  collapsed: boolean;
-}) {
-  return (
-    <div className="px-2">
-      {/* Group header — hidden when collapsed */}
-      <AnimatePresence mode="wait">
-        {!collapsed && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.15 }}
-            className="px-3 pb-1 pt-4"
-          >
-            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/50">
-              {group.label}
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className={cn('flex flex-col', collapsed ? 'gap-1' : 'gap-0.5')}>
-        {group.items.map((item) => (
-          <SidebarNavItem key={item.to} item={item} collapsed={collapsed} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ── Sidebar root ─────────────────────────────────────────── */
+/* ── Sidebar Root ─────────────────────────────────────────── */
 export function Sidebar({ open, onToggle, className }: SidebarProps) {
   const { theme, setTheme } = useTheme();
+  const { data: version } = useVersion();
 
   const cycleTheme = () => {
-    const themes: Array<'dark' | 'light' | 'system'> = [
-      'dark',
-      'light',
-      'system',
-    ];
+    const themes: Array<'dark' | 'light' | 'system'> = ['dark', 'light', 'system'];
     const idx = themes.indexOf(theme);
     setTheme(themes[(idx + 1) % themes.length]);
   };
 
   const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor;
+  const buildVersion = version?.number ?? version?.build?.version ?? '0.6.0-rc';
 
   return (
     <motion.aside
@@ -213,91 +129,78 @@ export function Sidebar({ open, onToggle, className }: SidebarProps) {
       animate={{ width: open ? 240 : 56 }}
       transition={{ duration: 0.2, ease: 'easeInOut' }}
       className={cn(
-        'fixed left-0 top-12 z-30 flex flex-col border-r bg-sidebar',
-        'h-[calc(100vh-3rem-1.75rem)]', // viewport minus TopNav (h-12) and StatusBar (h-7)
+        'fixed left-0 top-12 z-30 flex flex-col border-r border-border',
+        'h-[calc(100vh-3rem-1.75rem)]', // viewport minus TopNav + StatusBar
+        'bg-sidebar-bg',
         className,
       )}
       aria-label="Main navigation"
     >
-      {/* Navigation links */}
+      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-4 scrollbar-none">
-        {NAV_GROUPS.map((group) => (
-          <SidebarGroup
-            key={group.label}
-            group={group}
-            collapsed={!open}
-          />
+        {NAV_GROUPS.map((group, gIdx) => (
+          <div key={gIdx}>
+            {gIdx > 0 && (
+              <div className="mx-4 my-3 h-px bg-border" aria-hidden="true" />
+            )}
+            <div className={cn('flex flex-col', open ? 'gap-0.5' : 'gap-1')}>
+              {group.items.map((item) => (
+                <SidebarNavItem
+                  key={item.to}
+                  item={item}
+                  collapsed={!open}
+                />
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
 
-      {/* Bottom section */}
+      {/* Bottom section — theme toggle + collapse + version */}
       <div
         className={cn(
-          'flex shrink-0 items-center border-t border-sidebar-border/60 px-3 py-2.5',
+          'flex shrink-0 items-center border-t border-border px-3 py-2.5',
           open ? 'justify-between gap-2' : 'flex-col gap-2',
         )}
       >
-        {/* Profile placeholder */}
-        <div
+        {/* Theme toggle */}
+        <button
+          type="button"
+          onClick={cycleTheme}
           className={cn(
-            'flex items-center gap-2.5 overflow-hidden',
-            !open && 'flex-col',
+            'flex items-center justify-center rounded-sm p-1.5',
+            'text-text-muted hover:text-foreground hover:bg-accent-subtle',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
+          aria-label={`Theme: ${theme}`}
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-[11px] font-semibold text-muted-foreground">
-            CO
-          </div>
-          <AnimatePresence mode="wait">
-            {open && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="flex flex-col leading-tight"
-              >
-                <span className="text-xs font-medium text-foreground/80">
-                  Cloud Operator
-                </span>
-                <span className="text-[10px] text-muted-foreground/60">
-                  Admin
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+          <ThemeIcon className="h-3.5 w-3.5" />
+        </button>
 
-        {/* Actions */}
-        <div className={cn('flex', open ? 'gap-0.5' : 'flex-col gap-0.5')}>
-          {/* Theme toggle */}
-          <button
-            type="button"
-            onClick={cycleTheme}
-            className={cn(
-              'flex items-center justify-center rounded-md p-1.5 text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-foreground',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-            )}
-            aria-label={`Theme: ${theme}`}
-          >
-            <ThemeIcon className="h-3.5 w-3.5" />
-          </button>
+        {/* Collapse toggle */}
+        <button
+          type="button"
+          onClick={onToggle}
+          className={cn(
+            'flex items-center justify-center rounded-sm p-1.5',
+            'text-text-muted hover:text-foreground hover:bg-accent-subtle',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          )}
+          aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
+        >
+          {open ? (
+            <ChevronLeft className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+        </button>
 
-          {/* Collapse toggle */}
-          <button
-            type="button"
-            onClick={onToggle}
-            className={cn(
-              'flex items-center justify-center rounded-md p-1.5 text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-foreground',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-            )}
-            aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
-          >
-            {open ? (
-              <ChevronLeft className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5" />
-            )}
-          </button>
-        </div>
+        {/* Version badge — only when expanded */}
+        {open && (
+          <span className="text-caption text-text-muted tabular-nums">
+            v{buildVersion}
+          </span>
+        )}
       </div>
     </motion.aside>
   );

@@ -1,4 +1,5 @@
 import { useSystem } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -63,6 +64,7 @@ const fields: Array<{
 ];
 
 export default function SystemPage() {
+  usePageTitle('System');
   const { data, isLoading, error } = useSystem();
 
   return (

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   useHealth,
   useKernel,
@@ -207,6 +208,7 @@ function StatCardsSkeleton() {
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  usePageTitle('Dashboard');
   const navigate = useNavigate();
 
   const { data: health, isLoading: healthLoading, error: healthError } = useHealth();

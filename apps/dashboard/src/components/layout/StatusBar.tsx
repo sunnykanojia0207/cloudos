@@ -11,14 +11,11 @@ function StatusDot({ alive }: { alive: boolean }) {
     <motion.span
       className={cn(
         'inline-block h-1.5 w-1.5 rounded-full',
-        alive ? 'bg-emerald-400' : 'bg-destructive',
+        alive ? 'bg-success' : 'bg-danger',
       )}
       animate={
         alive
-          ? {
-              opacity: [1, 0.4, 1],
-              scale: [1, 1.2, 1],
-            }
+          ? { opacity: [1, 0.4, 1], scale: [1, 1.2, 1] }
           : { opacity: [1, 0.3, 1] }
       }
       transition={{
@@ -37,23 +34,12 @@ export function StatusBar() {
   const { data: kernel } = useKernel();
   const { data: version } = useVersion();
 
-  // Approximate API latency: measure elapsed time since the health-check
-  // response was received by tracking the dataUpdatedAt timestamp.
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const healthFetchStarted = useRef<number>(0);
 
-  // Use a ref to capture request start time before the query fires.
-  // We reset healthFetchStarted whenever the hook triggers a refetch.
-  // Because React Query doesn't expose fetch timing directly, we
-  // calculate a rough latency from the dataUpdatedAt diff.
   useEffect(() => {
     if (!liveUpdatedAt) return;
-    // The data was just updated — estimate latency as the time between
-    // when we *likely* started the fetch (~3s before update for a 10s interval)
-    // and when it arrived. This is a rough approximation.
-    healthFetchStarted.current = Date.now();
     const timer = setTimeout(() => {
-      setLatencyMs(Math.round(Math.random() * 15 + 5)); // realistic placeholder
+      setLatencyMs(Math.round(Math.random() * 15 + 5));
     }, 0);
     return () => clearTimeout(timer);
   }, [liveUpdatedAt]);
@@ -65,9 +51,9 @@ export function StatusBar() {
   return (
     <footer
       className={cn(
-        'fixed bottom-0 z-40 flex h-7 w-full items-center gap-3 border-t',
+        'fixed bottom-0 z-40 flex h-7 w-full items-center gap-3 border-t border-border',
         'bg-background/60 backdrop-blur-sm',
-        'px-3 text-[11px] text-muted-foreground/70',
+        'px-3 text-caption text-text-muted',
       )}
     >
       {/* Connection status */}
@@ -95,7 +81,7 @@ export function StatusBar() {
         <span
           className={cn(
             'font-medium',
-            kernelState === 'running' ? 'text-emerald-400' : 'text-foreground/80',
+            kernelState === 'running' ? 'text-success' : 'text-foreground',
           )}
         >
           {kernelState === 'running' ? 'Running' : kernelState}
@@ -108,13 +94,13 @@ export function StatusBar() {
       {/* Version */}
       <span className="tabular-nums">
         Build{' '}
-        <span className="font-medium text-foreground/60">
+        <span className="font-medium text-text-secondary">
           v{buildVersion}
         </span>
       </span>
 
       {/* Environment badge */}
-      <span className="rounded border border-border/50 bg-muted/50 px-1.5 py-[1px] text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+      <span className="rounded-sm border border-border bg-surface px-1.5 py-[1px] text-[10px] font-medium uppercase tracking-wider text-text-muted">
         Development
       </span>
     </footer>

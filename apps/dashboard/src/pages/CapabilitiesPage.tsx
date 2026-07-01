@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useCapabilities } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   Card,
   CardContent,
@@ -116,6 +117,7 @@ function CapabilityCard({
 }
 
 export default function CapabilitiesPage() {
+  usePageTitle('Capabilities');
   const { data, isLoading, error } = useCapabilities();
   const items = data?.items ?? [];
 

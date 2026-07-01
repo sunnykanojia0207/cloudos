@@ -1,10 +1,12 @@
 import { Puzzle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 /**
  * Plugins page — stub until the Plugin Discovery API (S1-004) is implemented.
  */
 export default function PluginsPage() {
+  usePageTitle('Plugins');
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">

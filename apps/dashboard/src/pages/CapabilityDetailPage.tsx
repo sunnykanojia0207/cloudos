@@ -1,5 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { useCapability } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   Card,
   CardContent,
@@ -22,6 +23,8 @@ import { Button } from '@/components/ui/button';
 export default function CapabilityDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading, error } = useCapability(id ?? '');
+
+  usePageTitle(data ? `${data.spec.displayName} • Capabilities` : 'Capability Detail');
 
   return (
     <div className="space-y-6">

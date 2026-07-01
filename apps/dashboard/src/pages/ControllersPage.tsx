@@ -1,4 +1,5 @@
 import { useControllers } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   Card,
   CardContent,
@@ -45,6 +46,7 @@ const stateVariant = (state: string): 'default' | 'secondary' | 'destructive' | 
 };
 
 export default function ControllersPage() {
+  usePageTitle('Controllers');
   const { data, isLoading, error } = useControllers();
   const navigate = useNavigate();
   const controllers = data?.controllers ?? [];

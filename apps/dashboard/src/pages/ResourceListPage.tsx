@@ -1,5 +1,6 @@
 import { useParams, Link } from 'react-router-dom';
 import { useResources } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   Card,
   CardContent,
@@ -17,13 +18,15 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import type { ResourceObject, ResourceSpec, ResourceStatus, ResourceMeta } from '@cloudos/sdk';
 
 export default function ResourceListPage() {
   const { kind } = useParams<{ kind: string }>();
+  usePageTitle(kind ? `${kind} • Resources` : 'Resources');
   const { data, isLoading, error } = useResources(kind ?? '');
 
   // ResourceObject items from the ResourceList
-  const items = (data as any)?.items ?? [];
+  const items: ResourceObject<ResourceSpec, ResourceStatus>[] = data?.items ?? [];
 
   return (
     <div className="space-y-6">
@@ -68,9 +71,9 @@ export default function ResourceListPage() {
                 </CardContent>
               </Card>
             ))
-          : items.map((item: any) => {
-              const meta = item.metadata ?? {};
-              const status = item.status ?? {};
+          : items.map((item: ResourceObject<ResourceSpec, ResourceStatus>) => {
+              const meta = item.metadata;
+              const status = item.status ?? ({} as ResourceStatus);
               const isActive = status.phase === 'Active' || status.status === 'ready';
               return (
                 <Link
@@ -100,9 +103,9 @@ export default function ResourceListPage() {
                           )}
                           <span>ID: {meta.id}</span>
                         </div>
-                        {meta.namespace && (
+                        {(meta as ResourceMeta & { namespace?: string }).namespace && (
                           <div>
-                            Namespace: {meta.namespace}
+                            Namespace: {(meta as ResourceMeta & { namespace?: string }).namespace}
                           </div>
                         )}
                       </div>

@@ -26,6 +26,7 @@ import {
   List,
   Zap,
 } from 'lucide-react';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   useProject,
   useControllers,
@@ -675,6 +676,8 @@ export default function ProjectDetailPage() {
     error,
     refetch,
   } = useProject(projectId ?? '');
+
+  usePageTitle(project ? `${project.spec.displayName} • Projects` : 'Project Detail');
   const { data: controllersData } = useControllers();
   const { data: resourceKindsData } = useResourceKinds();
   const deleteProject = useDeleteProject();

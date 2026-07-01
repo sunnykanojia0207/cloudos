@@ -45,3 +45,6 @@ coverage.html
 ## Docker
 .docker/
 docker-compose.override.yml
+
+## Error logs
+*.err

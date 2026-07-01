@@ -24,10 +24,9 @@ interface CommandProps {
   className?: string;
   children?: React.ReactNode;
   onSelect?: (value: string) => void;
-  filter?: (value: string, search: string) => number;
 }
 
-function Command({ className, children, onSelect, filter: _filter }: CommandProps) {
+function Command({ className, children, onSelect }: CommandProps) {
   const [activeIndex, setActiveIndex] = React.useState(-1);
   const items = React.useRef<HTMLDivElement[]>([]);
 
@@ -37,7 +36,7 @@ function Command({ className, children, onSelect, filter: _filter }: CommandProp
     >
       <div
         className={cn(
-          'flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground',
+          'flex h-full w-full flex-col overflow-hidden rounded-lg bg-surface-elevated text-foreground',
           className,
         )}
       >
@@ -62,8 +61,8 @@ function CommandDialog({ open, onOpenChange, children }: CommandDialogProps) {
       <DialogDescription className="sr-only">
         Search and run commands
       </DialogDescription>
-      <DialogContent className="overflow-hidden p-0 shadow-lg max-w-[540px]">
-        <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+      <DialogContent size="wide" className="overflow-hidden p-0 shadow-lg max-w-[640px]">
+        <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-caption [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-text-muted [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-2 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2.5 [&_[cmdk-item]_svg]:h-4 [&_[cmdk-item]_svg]:w-4">
           {children}
         </Command>
       </DialogContent>
@@ -84,14 +83,15 @@ const CommandInput = React.forwardRef<HTMLInputElement, CommandInputProps>(
 
     return (
       <div
-        className={cn('flex items-center border-b px-3', wrapperClassName)}
+        className={cn('flex items-center border-b border-border px-4', wrapperClassName)}
         cmdk-input-wrapper=""
       >
-        <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+        <Search className="mr-3 h-4 w-4 shrink-0 text-text-muted" />
         <input
           ref={ref}
           className={cn(
-            'flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
+            'flex h-12 w-full rounded-md bg-transparent py-3 text-body outline-none placeholder:text-text-muted disabled:cursor-not-allowed disabled:opacity-50',
+            'font-medium',
             className,
           )}
           onInput={() => {
@@ -136,7 +136,7 @@ const CommandList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn('max-h-[300px] overflow-y-auto overflow-x-hidden', className)}
+    className={cn('max-h-[min(480px,60vh)] overflow-y-auto overflow-x-hidden p-2', className)}
     {...props}
   />
 ));
@@ -149,7 +149,7 @@ const CommandEmpty = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn('py-6 text-center text-sm', className)}
+    className={cn('py-8 text-center text-small text-text-muted', className)}
     {...props}
   />
 ));
@@ -165,17 +165,19 @@ const CommandGroup = React.forwardRef<HTMLDivElement, CommandGroupProps>(
     <div
       ref={ref}
       className={cn(
-        'overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground',
+        'overflow-hidden text-foreground',
         className,
       )}
       {...props}
     >
       {heading && (
-        <div cmdk-group-heading="">
+        <div cmdk-group-heading="" className="px-2 py-1.5 text-caption font-medium text-text-muted">
           {heading}
         </div>
       )}
-      {children}
+      <div className="flex flex-col gap-0.5">
+        {children}
+      </div>
     </div>
   ),
 );
@@ -225,8 +227,9 @@ const CommandItem = React.forwardRef<HTMLDivElement, CommandItemProps>(
           }
         }}
         className={cn(
-          'relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none aria-selected:bg-accent aria-selected:text-accent-foreground data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
-          isActive && 'bg-accent text-accent-foreground',
+          'relative flex cursor-default select-none items-center rounded-sm px-2 py-2.5 text-body outline-none',
+          'aria-selected:bg-accent-subtle data-[active=true]:bg-accent-subtle',
+          'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
           className,
         )}
         {...props}
@@ -245,7 +248,7 @@ const CommandShortcut = ({
 }: React.HTMLAttributes<HTMLSpanElement>) => (
   <span
     className={cn(
-      'ml-auto text-xs tracking-widest text-muted-foreground',
+      'ml-auto text-caption tracking-widest text-text-muted',
       className,
     )}
     {...props}

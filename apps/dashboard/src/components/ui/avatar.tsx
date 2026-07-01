@@ -16,10 +16,12 @@ function useAvatarContext(): AvatarContextValue {
 }
 
 /* ── Root ──────────────────────────────────────────────── */
-interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {}
+interface AvatarProps extends React.HTMLAttributes<HTMLDivElement> {
+  size?: 'sm' | 'default' | 'lg';
+}
 
 const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
-  ({ className, ...props }, ref) => {
+  ({ className, size = 'default', ...props }, ref) => {
     const [imageError, setImageError] = React.useState(false);
 
     return (
@@ -27,7 +29,10 @@ const Avatar = React.forwardRef<HTMLDivElement, AvatarProps>(
         <div
           ref={ref}
           className={cn(
-            'relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full',
+            'relative flex shrink-0 overflow-hidden rounded-full',
+            size === 'sm' && 'h-6 w-6',
+            size === 'default' && 'h-7 w-7',
+            size === 'lg' && 'h-10 w-10',
             className,
           )}
           {...props}
@@ -45,7 +50,6 @@ const AvatarImage = React.forwardRef<HTMLImageElement, AvatarImageProps>(
   ({ className, onError, ...props }, ref) => {
     const { imageError, setImageError } = useAvatarContext();
 
-    // If image previously errored, don't try again
     if (imageError) return null;
 
     return (
@@ -89,7 +93,7 @@ const AvatarFallback = React.forwardRef<HTMLDivElement, AvatarFallbackProps>(
       <div
         ref={ref}
         className={cn(
-          'flex h-full w-full items-center justify-center rounded-full bg-muted text-sm font-medium text-muted-foreground',
+          'flex h-full w-full items-center justify-center rounded-full bg-accent-subtle text-caption font-medium text-text-secondary',
           className,
         )}
         {...props}

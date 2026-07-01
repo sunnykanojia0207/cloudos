@@ -1,7 +1,13 @@
 import { motion } from 'framer-motion';
-import { Menu, Sun, Moon, Monitor, Bell, Command as CommandIcon } from 'lucide-react';
+import {
+  Menu,
+  Bell,
+  Search,
+  Command as CommandIcon,
+} from 'lucide-react';
 import { useTheme } from '@/components/theme/ThemeProvider';
 import { useCommandPalette } from '@/components/layout/CommandPalette';
+import { useHealth } from '@/hooks/useCloudOS';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -20,66 +26,39 @@ interface TopNavProps {
   sidebarOpen: boolean;
 }
 
-/* ── Icon wrapper with hover animation ────────────────────── */
-function IconButton({
-  children,
-  onClick,
-  label,
-  className,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  label: string;
-  className?: string;
-}) {
-  return (
-    <motion.button
-      type="button"
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-      onClick={onClick}
-      aria-label={label}
-      className={cn(
-        'relative flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
-        className,
-      )}
-    >
-      {children}
-    </motion.button>
-  );
-}
-
 /* ── TopNav ───────────────────────────────────────────────── */
-export function TopNav({ onToggleSidebar, sidebarOpen }: TopNavProps) {
-  const { theme, setTheme } = useTheme();
+export function TopNav({ onToggleSidebar }: TopNavProps) {
+  const { theme } = useTheme();
   const { setOpen: setCommandOpen } = useCommandPalette();
+  const { data: health } = useHealth();
 
-  const cycleTheme = () => {
-    const themes: Array<'dark' | 'light' | 'system'> = ['dark', 'light', 'system'];
-    const idx = themes.indexOf(theme);
-    setTheme(themes[(idx + 1) % themes.length]);
-  };
-
-  const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor;
+  const isHealthy = health?.overall?.status === 'healthy' || health?.overall?.status === 'running';
+  const isDegraded = health?.overall?.status === 'degraded' || health?.overall?.status === 'warning';
+  const healthColor = isHealthy ? 'bg-success' : isDegraded ? 'bg-warning' : 'bg-danger';
 
   return (
     <header
       className={cn(
-        'fixed top-0 z-50 flex h-12 w-full items-center gap-1 border-b',
-        'bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60',
-        'px-3',
+        'fixed top-0 z-50 flex h-12 w-full items-center gap-2 border-b border-border',
+        'bg-topnav-bg/80 backdrop-blur-xl supports-[backdrop-filter]:bg-topnav-bg/60',
+        'px-4',
       )}
     >
       {/* ── Left section ─────────────────────────── */}
-      <div className="flex items-center gap-1.5">
-        {/* Hamburger menu */}
-        <IconButton
-          label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+      <div className="flex items-center gap-2">
+        {/* Hamburger */}
+        <button
+          type="button"
           onClick={onToggleSidebar}
+          aria-label="Toggle sidebar"
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-md',
+            'text-text-muted hover:text-foreground hover:bg-accent-subtle',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          )}
         >
           <Menu className="h-4 w-4" />
-        </IconButton>
+        </button>
 
         {/* Breadcrumbs */}
         <div className="hidden sm:block">
@@ -87,52 +66,68 @@ export function TopNav({ onToggleSidebar, sidebarOpen }: TopNavProps) {
         </div>
       </div>
 
-      {/* ── Spacer ───────────────────────────────── */}
+      {/* ── Spacer ──────────────────────────────── */}
       <div className="flex-1" />
 
-      {/* ── Right section ────────────────────────── */}
-      <div className="flex items-center gap-0.5">
-        {/* Command palette trigger with keyboard badge */}
+      {/* ── Right section ───────────────────────── */}
+      <div className="flex items-center gap-1">
+        {/* Cmd+K search trigger */}
         <button
           type="button"
           onClick={() => setCommandOpen(true)}
           className={cn(
-            'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors',
-            'text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground/80',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+            'flex items-center gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5',
+            'text-small text-text-muted hover:text-foreground hover:border-border-hover',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            'min-w-[160px] sm:min-w-[200px]',
           )}
           aria-label="Open command palette (Ctrl+K)"
         >
-          <CommandIcon className="h-3.5 w-3.5" />
-          <kbd className="hidden rounded border border-border/50 bg-muted/50 px-1 py-[1px] text-[9px] font-medium tracking-wide text-muted-foreground/50 sm:inline-block">
+          <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="flex-1 text-left">Search...</span>
+          <kbd className="hidden rounded border border-border/50 bg-muted/50 px-1 py-[1px] text-[10px] font-medium text-text-muted sm:inline-block">
             ⌘K
           </kbd>
         </button>
 
-        {/* Separator */}
-        <div className="mx-1.5 h-4 w-px bg-border/60" aria-hidden="true" />
-
-        {/* Theme toggle */}
-        <IconButton label={`Theme: ${theme}`} onClick={cycleTheme}>
-          <ThemeIcon className="h-4 w-4" />
-        </IconButton>
+        {/* Kernel health indicator dot */}
+        <span
+          className={cn(
+            'inline-block h-2 w-2 rounded-full',
+            healthColor,
+          )}
+          aria-label={
+            isHealthy ? 'System healthy' : isDegraded ? 'System degraded' : 'System error'
+          }
+          title={
+            isHealthy ? 'Healthy' : isDegraded ? 'Degraded' : 'Error'
+          }
+        />
 
         {/* Notification bell */}
-        <IconButton label="Notifications">
+        <button
+          type="button"
+          aria-label="Notifications"
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-md',
+            'text-text-muted hover:text-foreground hover:bg-accent-subtle',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          )}
+        >
           <Bell className="h-4 w-4" />
-        </IconButton>
+        </button>
 
-        {/* Profile avatar dropdown */}
+        {/* Profile avatar */}
         <DropdownMenu>
           <DropdownMenuTrigger
             className={cn(
-              'ml-1 flex items-center justify-center rounded-full transition-opacity hover:opacity-80',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+              'flex items-center justify-center rounded-full transition-opacity hover:opacity-80',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             )}
             aria-label="User menu"
           >
-            <Avatar className="h-7 w-7">
-              <AvatarFallback className="bg-sidebar-accent text-[11px] font-semibold text-muted-foreground">
+            <Avatar>
+              <AvatarFallback className="bg-accent-subtle text-caption font-medium text-accent">
                 CO
               </AvatarFallback>
             </Avatar>
@@ -141,10 +136,10 @@ export function TopNav({ onToggleSidebar, sidebarOpen }: TopNavProps) {
           <DropdownMenuContent align="end" sideOffset={8}>
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col">
-                <span className="text-sm font-medium text-foreground">
+                <span className="text-body font-medium text-foreground">
                   Cloud Operator
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-small text-text-secondary">
                   admin@cloudos.io
                 </span>
               </div>
@@ -155,7 +150,7 @@ export function TopNav({ onToggleSidebar, sidebarOpen }: TopNavProps) {
               Keyboard Shortcuts
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => {}} className="text-destructive">
+            <DropdownMenuItem onSelect={() => {}} className="text-danger">
               Sign Out
             </DropdownMenuItem>
           </DropdownMenuContent>

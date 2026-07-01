@@ -190,7 +190,7 @@ export function CreateProjectDialog({
               id="project-id-helper"
               className={cn(
                 'text-xs',
-                id && !idValid ? 'text-destructive' : 'text-muted-foreground',
+                id && !idValid ? 'text-destructive' : 'text-text-secondary',
               )}
             >
               Must be unique, lowercase letters and hyphens
@@ -214,7 +214,7 @@ export function CreateProjectDialog({
               className={cn(
                 'flex w-full rounded-md border border-input bg-background px-3 py-2',
                 'text-sm ring-offset-background',
-                'placeholder:text-muted-foreground',
+                'placeholder:text-text-secondary',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                 'disabled:cursor-not-allowed disabled:opacity-50',
                 'resize-none min-h-[72px]',
@@ -347,7 +347,7 @@ function EnvironmentOption({
       <span
         className={cn(
           'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors',
-          selected ? 'border-primary bg-primary' : 'border-muted-foreground/40',
+          selected ? 'border-primary bg-primary' : 'border-text-secondary/40',
         )}
       >
         {selected && (

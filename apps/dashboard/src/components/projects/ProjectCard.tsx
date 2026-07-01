@@ -94,14 +94,14 @@ export function ProjectCard({ project, view }: ProjectCardProps) {
   );
 
   const activityDisplay = lastActivity ? (
-    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+    <span className="inline-flex items-center gap-1 text-xs text-text-secondary">
       <Clock className="h-3 w-3" />
       {relativeTime(lastActivity)}
     </span>
   ) : null;
 
   const resourceDisplay = project.status?.resourceCount != null ? (
-    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+    <span className="inline-flex items-center gap-1 text-xs text-text-secondary">
       <Box className="h-3 w-3" />
       {formatNumber(project.status.resourceCount)} resources
     </span>
@@ -137,8 +137,8 @@ export function ProjectCard({ project, view }: ProjectCardProps) {
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
-                  <Layers className="h-4 w-4 text-muted-foreground" />
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-surface">
+                  <Layers className="h-4 w-4 text-text-secondary" />
                 </div>
                 <div className="min-w-0">
                   <CardTitle className="text-sm font-semibold leading-tight truncate">
@@ -155,7 +155,7 @@ export function ProjectCard({ project, view }: ProjectCardProps) {
 
           <CardContent className="pb-3">
             {project.spec.description && (
-              <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 mb-2">
+              <p className="text-xs text-text-secondary leading-relaxed line-clamp-2 mb-2">
                 {truncate(project.spec.description, 100)}
               </p>
             )}
@@ -204,8 +204,8 @@ export function ProjectCard({ project, view }: ProjectCardProps) {
         aria-label={`Project ${project.spec.displayName}`}
       >
         {/* Icon */}
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/50">
-          <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-surface">
+          <Layers className="h-3.5 w-3.5 text-text-secondary" />
         </div>
 
         {/* Name + ID */}
@@ -214,7 +214,7 @@ export function ProjectCard({ project, view }: ProjectCardProps) {
             <span className="text-sm font-medium leading-tight truncate block">
               {project.spec.displayName}
             </span>
-            <span className="text-xs text-muted-foreground truncate block">
+            <span className="text-xs text-text-secondary truncate block">
               {project.metadata.id}
             </span>
           </div>

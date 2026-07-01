@@ -79,8 +79,9 @@ const TabsList = React.forwardRef<
       role="tablist"
       data-orientation={orientation}
       className={cn(
-        'inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground',
-        orientation === 'vertical' && 'flex-col h-auto w-fit',
+        'flex border-b border-border',
+        orientation === 'vertical' && 'flex-col border-b-0 border-r',
+        'gap-1',
         className,
       )}
       {...props}
@@ -92,10 +93,11 @@ TabsList.displayName = 'TabsList';
 /* ── Trigger ──────────────────────────────────────────── */
 interface TabsTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   value: string;
+  count?: number;
 }
 
 const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
-  ({ className, value: tabValue, ...props }, ref) => {
+  ({ className, value: tabValue, count, children, ...props }, ref) => {
     const { value, onValueChange } = useTabsContext();
     const isActive = value === tabValue;
 
@@ -106,17 +108,26 @@ const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
         role="tab"
         aria-selected={isActive}
         data-state={isActive ? 'active' : 'inactive'}
-        data-orientation={useTabsContext().orientation}
         onClick={() => onValueChange(tabValue)}
         className={cn(
-          'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
-          isActive
-            ? 'bg-background text-foreground shadow-sm'
-            : 'hover:text-foreground',
+          'inline-flex items-center justify-center whitespace-nowrap px-4 py-2',
+          'text-tab text-text-secondary transition-colors duration-150',
+          'border-b-2 border-transparent -mb-px',
+          'hover:text-foreground',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+          'disabled:pointer-events-none disabled:opacity-50',
+          isActive && 'border-accent text-foreground',
           className,
         )}
         {...props}
-      />
+      >
+        {children}
+        {count !== undefined && (
+          <span className="ml-1.5 rounded-sm bg-accent-subtle px-1.5 py-0.5 text-caption text-text-secondary tabular-nums">
+            {count}
+          </span>
+        )}
+      </button>
     );
   },
 );
@@ -140,7 +151,7 @@ const TabsContent = React.forwardRef<HTMLDivElement, TabsContentProps>(
         role="tabpanel"
         data-state={isActive ? 'active' : 'inactive'}
         className={cn(
-          'mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          'pt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
           className,
         )}
         {...props}

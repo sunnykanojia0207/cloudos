@@ -9,6 +9,10 @@ import { lazy, Suspense } from 'react';
 // Lazy-loaded pages for code splitting
 const ApplicationsPage = lazy(() => import('@/pages/ApplicationsPage'));
 const ApplicationDetailPage = lazy(() => import('@/pages/ApplicationDetailPage'));
+const DeploymentsPage = lazy(() => import('@/pages/DeploymentsPage'));
+const WorkflowsPage = lazy(() => import('@/pages/WorkflowsPage'));
+const WorkflowDetailPage = lazy(() => import('@/pages/WorkflowDetailPage'));
+const MonitoringPage = lazy(() => import('@/pages/MonitoringPage'));
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
 const SystemPage = lazy(() => import('@/pages/SystemPage'));
 const KernelPage = lazy(() => import('@/pages/KernelPage'));
@@ -22,6 +26,7 @@ const ControllersPage = lazy(() => import('@/pages/ControllersPage'));
 const ControllerDetailPage = lazy(() => import('@/pages/ControllerDetailPage'));
 const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'));
 const ProjectDetailPage = lazy(() => import('@/pages/ProjectDetailPage'));
+const DeploymentDetailPage = lazy(() => import('@/pages/DeploymentDetailPage'));
 const PluginsPage = lazy(() => import('@/pages/PluginsPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
@@ -64,6 +69,46 @@ export default function App() {
                   element={
                     <SuspenseWrapper>
                       <ApplicationDetailPage />
+                    </SuspenseWrapper>
+                  }
+                />
+                <Route
+                  path="applications/:appId/deployments/:deploymentNumber"
+                  element={
+                    <SuspenseWrapper>
+                      <DeploymentDetailPage />
+                    </SuspenseWrapper>
+                  }
+                />
+                <Route
+                  path="deployments"
+                  element={
+                    <SuspenseWrapper>
+                      <DeploymentsPage />
+                    </SuspenseWrapper>
+                  }
+                />
+                <Route
+                  path="workflows"
+                  element={
+                    <SuspenseWrapper>
+                      <WorkflowsPage />
+                    </SuspenseWrapper>
+                  }
+                />
+                <Route
+                  path="workflows/:workflowId"
+                  element={
+                    <SuspenseWrapper>
+                      <WorkflowDetailPage />
+                    </SuspenseWrapper>
+                  }
+                />
+                <Route
+                  path="monitoring"
+                  element={
+                    <SuspenseWrapper>
+                      <MonitoringPage />
                     </SuspenseWrapper>
                   }
                 />

@@ -82,122 +82,124 @@ interface DialogOverlayProps {
   onClick?: () => void;
 }
 
-const DialogOverlay = React.forwardRef<
-  HTMLDivElement,
-  DialogOverlayProps
->(({ className, onClick }, ref) => (
-  <motion.div
-    ref={ref}
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    transition={{ duration: 0.15 }}
-    onClick={onClick}
-    className={cn(
-      'fixed inset-0 z-50 bg-black/60',
-      className,
-    )}
-  />
-));
+const DialogOverlay = React.forwardRef<HTMLDivElement, DialogOverlayProps>(
+  ({ className, onClick }, ref) => (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      onClick={onClick}
+      className={cn(
+        'fixed inset-0 z-50 bg-black/60 dark:bg-black/60',
+        className,
+      )}
+    />
+  ),
+);
 DialogOverlay.displayName = 'DialogOverlay';
 
 interface DialogContentProps {
   className?: string;
   children?: React.ReactNode;
+  size?: 'narrow' | 'default' | 'wide';
 }
 
-const DialogContent = React.forwardRef<
-  HTMLDivElement,
-  DialogContentProps
->(({ className, children }, ref) => {
-  const { open, onOpenChange } = useDialogContext();
+const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
+  ({ className, children, size = 'default' }, ref) => {
+    const { open, onOpenChange } = useDialogContext();
 
-  // Close on Escape
-  React.useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onOpenChange(false);
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [open, onOpenChange]);
+    // Close on Escape
+    React.useEffect(() => {
+      if (!open) return;
+      const handler = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') onOpenChange(false);
+      };
+      document.addEventListener('keydown', handler);
+      return () => document.removeEventListener('keydown', handler);
+    }, [open, onOpenChange]);
 
-  // Trap focus inside dialog when open
-  const dialogRef = React.useRef<HTMLDivElement | null>(null);
+    // Focus management
+    const dialogRef = React.useRef<HTMLDivElement | null>(null);
 
-  React.useEffect(() => {
-    if (!open) return;
-    const el = dialogRef.current;
-    if (!el) return;
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    // Focus first focusable element or the dialog itself
-    const focusable = el.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    );
-    (focusable ?? el).focus();
-    return () => {
-      previouslyFocused?.focus();
-    };
-  }, [open]);
+    React.useEffect(() => {
+      if (!open) return;
+      const el = dialogRef.current;
+      if (!el) return;
+      const previouslyFocused = document.activeElement as HTMLElement | null;
+      const focusable = el.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      (focusable ?? el).focus();
+      return () => {
+        previouslyFocused?.focus();
+      };
+    }, [open]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== 'Tab') return;
-    const el = dialogRef.current;
-    if (!el) return;
-    const focusable = el.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    );
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey) {
-      if (document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const el = dialogRef.current;
+      if (!el) return;
+      const focusable = el.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
-    } else {
-      if (document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-  };
+    };
 
-  return createPortal(
-    <AnimatePresence>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
-          <DialogOverlay onClick={() => onOpenChange(false)} />
-          <motion.div
-            ref={(node) => {
-              dialogRef.current = node;
-              if (typeof ref === 'function') ref(node);
-              else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
-            }}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-            onKeyDown={handleKeyDown}
-            className={cn(
-              'relative z-50 grid w-full max-w-lg gap-4 border bg-background p-6 shadow-lg rounded-lg',
-              className,
-            )}
-          >
-            {children}
-            <DialogClose
-              className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+    return createPortal(
+      <AnimatePresence>
+        {open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+            <DialogOverlay onClick={() => onOpenChange(false)} />
+            <motion.div
+              ref={(node) => {
+                dialogRef.current = node;
+                if (typeof ref === 'function') ref(node);
+                else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+              }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
+              onKeyDown={handleKeyDown}
+              className={cn(
+                'relative z-50 grid w-full gap-4 border bg-surface-elevated p-6 shadow-lg',
+                size === 'narrow' && 'max-w-sm',
+                size === 'default' && 'max-w-lg',
+                size === 'wide' && 'max-w-2xl',
+                'rounded-lg',
+                className,
+              )}
             >
-              <X className="h-4 w-4" />
-              <span className="sr-only">Close</span>
-            </DialogClose>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>,
-    document.body,
-  );
-});
+              {children}
+              <DialogClose
+                className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogClose>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>,
+      document.body,
+    );
+  },
+);
 DialogContent.displayName = 'DialogContent';
 
 /* ── Close ────────────────────────────────────────────── */
@@ -228,7 +230,7 @@ const DialogHeader = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      'flex flex-col space-y-1.5 text-center sm:text-left',
+      'flex flex-col gap-1.5',
       className,
     )}
     {...props}
@@ -243,7 +245,7 @@ const DialogFooter = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      'flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2',
+      'flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2',
       className,
     )}
     {...props}
@@ -258,10 +260,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <h2
     ref={ref}
-    className={cn(
-      'text-lg font-semibold leading-none tracking-tight',
-      className,
-    )}
+    className={cn('text-h3 text-foreground', className)}
     {...props}
   />
 ));
@@ -274,7 +273,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn('text-sm text-muted-foreground', className)}
+    className={cn('text-small text-text-secondary', className)}
     {...props}
   />
 ));

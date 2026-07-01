@@ -6,7 +6,11 @@ import { cn } from '@/lib/utils';
 /* ── Label mapping ────────────────────────────────────────── */
 const LABEL_MAP: Record<string, string> = {
   '': 'Home',
-  dashboard: 'Dashboard',
+  applications: 'Applications',
+  deployments: 'Deployments',
+  projects: 'Projects',
+  monitoring: 'Monitoring',
+  workflows: 'Workflows',
   system: 'System',
   kernel: 'Kernel',
   capabilities: 'Capabilities',
@@ -15,7 +19,16 @@ const LABEL_MAP: Record<string, string> = {
   controllers: 'Controllers',
   plugins: 'Plugins',
   settings: 'Settings',
-  projects: 'Projects',
+  overview: 'Overview',
+  timeline: 'Timeline',
+  logs: 'Logs',
+  general: 'General',
+  runtimes: 'Runtimes',
+  buildpacks: 'Buildpacks',
+  installed: 'Installed',
+  catalog: 'Catalog',
+  health: 'Health',
+  dashboard: 'Dashboard',
 };
 
 function segmentLabel(seg: string): string {
@@ -43,27 +56,22 @@ export function Breadcrumbs() {
     <motion.nav
       initial={{ opacity: 0, x: -6 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
+      transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
       aria-label="Breadcrumb"
     >
-      <ol className="flex items-center gap-1 text-xs text-muted-foreground/70">
+      <ol className="flex items-center gap-1 text-small text-text-muted">
         {crumbs.map((crumb, idx) => {
           const isLast = idx === crumbs.length - 1;
 
           return (
             <li key={crumb.href} className="flex items-center gap-1">
               {idx > 0 && (
-                <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground/40" aria-hidden="true" />
+                <ChevronRight className="h-3 w-3 shrink-0 text-text-muted/50" aria-hidden="true" />
               )}
 
               {isLast ? (
                 <span
-                  className={cn(
-                    'rounded px-1.5 py-0.5 text-xs font-medium',
-                    idx === 0
-                      ? 'text-foreground/80'
-                      : 'text-foreground/70',
-                  )}
+                  className="rounded px-1.5 py-0.5 text-small font-medium text-foreground"
                   aria-current="page"
                 >
                   {crumb.label}
@@ -71,10 +79,7 @@ export function Breadcrumbs() {
               ) : (
                 <Link
                   to={crumb.href}
-                  className={cn(
-                    'rounded px-1.5 py-0.5 text-xs transition-colors duration-150',
-                    'hover:bg-muted/60 hover:text-foreground/80',
-                  )}
+                  className="rounded px-1.5 py-0.5 text-small transition-colors duration-100 hover:text-foreground hover:bg-accent-subtle"
                 >
                   {crumb.label}
                 </Link>

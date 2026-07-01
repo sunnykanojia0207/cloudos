@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useResourceKinds } from '@/hooks/useCloudOS';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import {
   Card,
   CardContent,
@@ -13,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, Database, ArrowRight } from 'lucide-react';
 
 export default function ResourcesPage() {
+  usePageTitle('Resources');
   const { data, isLoading, error } = useResourceKinds();
   const kinds = data?.kinds ?? [];
 
