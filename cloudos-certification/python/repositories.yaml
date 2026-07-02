@@ -1,0 +1,65 @@
+# Python certification repositories
+#
+# Criteria: Python project detected, venv created, dependencies installed,
+# application starts and serves HTTP.
+
+repositories:
+  - id: python-flask
+    name: "Flask Application"
+    url: "https://github.com/pallets/flask"
+    subpath: "examples/tutorial"
+    branch: "main"
+    expected:
+      buildpack: "python"
+      port: 8000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Flask tutorial app — may need app.py entry point"
+
+  - id: python-fastapi
+    name: "FastAPI Application"
+    url: "https://github.com/fastapi/fastapi"
+    subpath: "docs_src/first_steps"
+    branch: "master"
+    expected:
+      buildpack: "python"
+      port: 8000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "FastAPI — uses uvicorn, needs --port flag"
+
+  - id: python-django
+    name: "Django Application"
+    url: "https://github.com/django/django"
+    subpath: "tests/test_runner_apps/sample_project"
+    branch: "main"
+    expected:
+      buildpack: "python"
+      port: 8000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Django — uses manage.py runserver"
+
+  - id: python-quart
+    name: "Quart Application"
+    url: "https://github.com/pallets/quart"
+    subpath: "examples/hello_world"
+    branch: "main"
+    expected:
+      buildpack: "python"
+      port: 8000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Quart — async Flask, uses uvicorn/hypercorn"
+
+  - id: python-gunicorn
+    name: "Flask with Gunicorn"
+    url: "https://github.com/benoitc/gunicorn"
+    subpath: "examples/hello_flask"
+    branch: "master"
+    expected:
+      buildpack: "python"
+      port: 8000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Gunicorn WSGI server — check wsgi.py detection"

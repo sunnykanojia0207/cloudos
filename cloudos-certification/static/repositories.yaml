@@ -1,0 +1,63 @@
+# Static site certification repositories
+#
+# Criteria: No buildpack-specific files, files are served via static file server.
+# Static buildpack is the universal fallback — always matches.
+
+repositories:
+  - id: static-html
+    name: "Plain HTML Site"
+    url: "https://github.com/cloudos-examples/static-html"
+    branch: "main"
+    expected:
+      buildpack: "static"
+      port: 80
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Minimal HTML/CSS/JS site with index.html"
+
+  - id: static-hugo
+    name: "Hugo Static Site"
+    url: "https://github.com/gohugoio/hugoBasicExample"
+    branch: "master"
+    expected:
+      buildpack: "static"
+      port: 80
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Hugo-generated site (pre-built, no Hugo required)"
+
+  - id: static-vue-build
+    name: "Vue.js Build Output"
+    url: "https://github.com/vuejs/vue"
+    subpath: "examples"
+    branch: "main"
+    expected:
+      buildpack: "static"
+      port: 80
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Vue.js CDN examples — pure static files"
+
+  - id: static-angular-build
+    name: "Angular Build Output"
+    url: "https://github.com/angular/angular"
+    subpath: "aio/content/guide"
+    branch: "main"
+    expected:
+      buildpack: "static"
+      port: 80
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Angular guide static files"
+
+  - id: static-svelte-build
+    name: "Svelte Build Output"
+    url: "https://github.com/sveltejs/svelte"
+    subpath: "sites/svelte.dev/src"
+    branch: "master"
+    expected:
+      buildpack: "static"
+      port: 80
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Svelte site source — basic static check"

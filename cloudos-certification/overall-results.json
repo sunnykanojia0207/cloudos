@@ -1,0 +1,20 @@
+{
+  "program": "CloudOS Certification Program",
+  "version": "v0.6",
+  "lastUpdated": "2026-07-02",
+  "overall": {
+    "passed": 0,
+    "total": 35,
+    "percentage": 0,
+    "status": "not-started"
+  },
+  "stacks": {
+    "go": { "passed": 0, "total": 5, "status": "not-started" },
+    "node": { "passed": 0, "total": 5, "status": "not-started" },
+    "react": { "passed": 0, "total": 5, "status": "not-started" },
+    "nextjs": { "passed": 0, "total": 5, "status": "not-started" },
+    "python": { "passed": 0, "total": 5, "status": "not-started" },
+    "laravel": { "passed": 0, "total": 5, "status": "not-started" },
+    "static": { "passed": 0, "total": 5, "status": "not-started" }
+  }
+}

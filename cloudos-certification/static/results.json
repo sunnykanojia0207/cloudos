@@ -1,0 +1,41 @@
+{
+  "stack": "static",
+  "total": 5,
+  "passed": 0,
+  "failed": 0,
+  "untested": 5,
+  "status": "not-started",
+  "lastUpdated": "2026-07-02",
+  "results": [
+    {
+      "id": "static-html",
+      "name": "Plain HTML Site",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "static-hugo",
+      "name": "Hugo Static Site",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "static-vue-build",
+      "name": "Vue.js Build Output",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "static-angular-build",
+      "name": "Angular Build Output",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "static-svelte-build",
+      "name": "Svelte Build Output",
+      "status": "untested",
+      "issues": []
+    }
+  ]
+}

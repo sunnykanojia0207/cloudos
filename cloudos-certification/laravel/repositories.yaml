@@ -1,0 +1,62 @@
+# Laravel certification repositories
+#
+# Criteria: composer.json present, composer install succeeds,
+# artisan key:generate runs, php artisan serve binds to allocated port.
+
+repositories:
+  - id: laravel-fresh
+    name: "Fresh Laravel Installation"
+    url: "https://github.com/laravel/laravel"
+    branch: "master"
+    expected:
+      buildpack: "laravel"
+      port: 8000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: laravel-breeze
+    name: "Laravel Breeze"
+    url: "https://github.com/laravel/breeze"
+    subpath: "stubs/api"
+    branch: "master"
+    expected:
+      buildpack: "laravel"
+      port: 8000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Breeze API stubs — may need npm install for frontend"
+
+  - id: laravel-api-only
+    name: "Laravel API Only"
+    url: "https://github.com/laravel/laravel"
+    branch: "master"
+    expected:
+      buildpack: "laravel"
+      port: 8000
+      health_endpoint: "/api/health"
+      health_status: 200
+      notes: "Standard Laravel with API routes only"
+
+  - id: laravel-sanctum
+    name: "Laravel Sanctum"
+    url: "https://github.com/laravel/sanctum"
+    subpath: "tests/Fixtures"
+    branch: "master"
+    expected:
+      buildpack: "laravel"
+      port: 8000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Sanctum test fixtures — check detection"
+
+  - id: laravel-jetstream
+    name: "Laravel Jetstream"
+    url: "https://github.com/laravel/jetstream"
+    subpath: "stubs/livewire"
+    branch: "master"
+    expected:
+      buildpack: "laravel"
+      port: 8000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "Jetstream with Livewire — may have additional build steps"

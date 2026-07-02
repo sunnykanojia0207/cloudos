@@ -1,0 +1,61 @@
+# Go certification repositories
+# Each entry must pass the full deployment lifecycle.
+#
+# Criteria: go.mod present, `go build` succeeds, binary starts and serves HTTP.
+
+repositories:
+  - id: go-basic-http
+    name: "Basic HTTP API"
+    url: "https://github.com/golang/example"
+    subpath: "hello"  # subdirectory within repo
+    branch: "master"
+    expected:
+      buildpack: "go"
+      port: 8080
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: go-gin
+    name: "Gin HTTP API"
+    url: "https://github.com/gin-gonic/examples"
+    subpath: "basic"
+    branch: "master"
+    expected:
+      buildpack: "go"
+      port: 8080
+      health_endpoint: "/ping"
+      health_status: 200
+
+  - id: go-echo
+    name: "Echo HTTP API"
+    url: "https://github.com/labstack/echo"
+    subpath: "recipes/hello-world"
+    branch: "master"
+    expected:
+      buildpack: "go"
+      port: 8080
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: go-fiber
+    name: "Fiber HTTP API"
+    url: "https://github.com/gofiber/recipes"
+    subpath: "hello-world"
+    branch: "master"
+    expected:
+      buildpack: "go"
+      port: 8080
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: go-grpc
+    name: "gRPC Greeter Service"
+    url: "https://github.com/grpc/grpc-go"
+    subpath: "examples/helloworld/greeter_server"
+    branch: "master"
+    expected:
+      buildpack: "go"
+      port: 8080
+      health_endpoint: "/healthz"
+      health_status: 200
+      notes: "gRPC services may need HTTP health endpoint exposed"

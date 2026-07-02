@@ -1,0 +1,58 @@
+# Node.js certification repositories
+#
+# Criteria: package.json present, npm install succeeds, npm start serves HTTP.
+
+repositories:
+  - id: node-express
+    name: "Express API"
+    url: "https://github.com/expressjs/express"
+    subpath: "examples/hello-world"
+    branch: "master"
+    expected:
+      buildpack: "node"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: node-fastify
+    name: "Fastify API"
+    url: "https://github.com/fastify/fastify-example"
+    branch: "master"
+    expected:
+      buildpack: "node"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: node-nestjs
+    name: "NestJS API"
+    url: "https://github.com/nestjs/typescript-starter"
+    branch: "master"
+    expected:
+      buildpack: "node"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "May need build step (npm run build) before start"
+
+  - id: node-koa
+    name: "Koa API"
+    url: "https://github.com/koajs/koa"
+    subpath: "examples/hello-world"
+    branch: "master"
+    expected:
+      buildpack: "node"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: node-hono
+    name: "Hono API"
+    url: "https://github.com/honojs/examples"
+    subpath: "basic"
+    branch: "main"
+    expected:
+      buildpack: "node"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200

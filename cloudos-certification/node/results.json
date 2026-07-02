@@ -1,0 +1,41 @@
+{
+  "stack": "node",
+  "total": 5,
+  "passed": 0,
+  "failed": 0,
+  "untested": 5,
+  "status": "not-started",
+  "lastUpdated": "2026-07-02",
+  "results": [
+    {
+      "id": "node-express",
+      "name": "Express API",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "node-fastify",
+      "name": "Fastify API",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "node-nestjs",
+      "name": "NestJS API",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "node-koa",
+      "name": "Koa API",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "node-hono",
+      "name": "Hono API",
+      "status": "untested",
+      "issues": []
+    }
+  ]
+}

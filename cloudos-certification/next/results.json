@@ -1,0 +1,41 @@
+{
+  "stack": "nextjs",
+  "total": 5,
+  "passed": 0,
+  "failed": 0,
+  "untested": 5,
+  "status": "not-started",
+  "lastUpdated": "2026-07-02",
+  "results": [
+    {
+      "id": "next-app-router",
+      "name": "Next.js App Router",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "next-pages-router",
+      "name": "Next.js Pages Router",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "next-api-routes",
+      "name": "Next.js API Routes",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "next-tailwind",
+      "name": "Next.js with Tailwind",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "next-prisma",
+      "name": "Next.js with Prisma",
+      "status": "untested",
+      "issues": []
+    }
+  ]
+}

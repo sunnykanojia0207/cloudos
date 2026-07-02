@@ -1,0 +1,41 @@
+{
+  "stack": "go",
+  "total": 5,
+  "passed": 0,
+  "failed": 0,
+  "untested": 5,
+  "status": "not-started",
+  "lastUpdated": "2026-07-02",
+  "results": [
+    {
+      "id": "go-basic-http",
+      "name": "Basic HTTP API",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "go-gin",
+      "name": "Gin HTTP API",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "go-echo",
+      "name": "Echo HTTP API",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "go-fiber",
+      "name": "Fiber HTTP API",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "go-grpc",
+      "name": "gRPC Greeter Service",
+      "status": "untested",
+      "issues": []
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+# Next.js certification repositories
+#
+# Criteria: package.json with "next" dependency, npm install + build succeeds,
+# `next start` binds to allocated port.
+
+repositories:
+  - id: next-app-router
+    name: "Next.js App Router"
+    url: "https://github.com/vercel/next.js"
+    subpath: "examples/hello-world"
+    branch: "canary"
+    expected:
+      buildpack: "nextjs"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: next-pages-router
+    name: "Next.js Pages Router"
+    url: "https://github.com/vercel/next.js"
+    subpath: "examples/basic-pages"
+    branch: "canary"
+    expected:
+      buildpack: "nextjs"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: next-api-routes
+    name: "Next.js API Routes"
+    url: "https://github.com/vercel/next.js"
+    subpath: "examples/api-routes"
+    branch: "canary"
+    expected:
+      buildpack: "nextjs"
+      port: 3000
+      health_endpoint: "/api/hello"
+      health_status: 200
+
+  - id: next-tailwind
+    name: "Next.js with Tailwind"
+    url: "https://github.com/vercel/next.js"
+    subpath: "examples/with-tailwindcss"
+    branch: "canary"
+    expected:
+      buildpack: "nextjs"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: next-prisma
+    name: "Next.js with Prisma"
+    url: "https://github.com/prisma/prisma-examples"
+    subpath: "orm/nextjs"
+    branch: "latest"
+    expected:
+      buildpack: "nextjs"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+      notes: "May require database connection — skip DB-dependent tests"

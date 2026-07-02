@@ -1,0 +1,60 @@
+# React certification repositories
+#
+# Criteria: package.json with react dependency, npm install + build succeeds,
+# static files served via npx serve.
+
+repositories:
+  - id: react-vite-default
+    name: "Vite React (Default)"
+    url: "https://github.com/vitejs/vite"
+    subpath: "packages/create-vite/template-react"
+    branch: "main"
+    expected:
+      buildpack: "react"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: react-vite-ts
+    name: "Vite React TypeScript"
+    url: "https://github.com/vitejs/vite"
+    subpath: "packages/create-vite/template-react-ts"
+    branch: "main"
+    expected:
+      buildpack: "react"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: react-cra
+    name: "Create React App"
+    url: "https://github.com/facebook/create-react-app"
+    subpath: "packages/cra-template/template"
+    branch: "main"
+    expected:
+      buildpack: "react"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: react-router
+    name: "React Router Example"
+    url: "https://github.com/remix-run/react-router"
+    subpath: "examples/basic"
+    branch: "main"
+    expected:
+      buildpack: "react"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200
+
+  - id: react-mui
+    name: "Material UI Example"
+    url: "https://github.com/mui/material-ui"
+    subpath: "examples/material-ui-vite"
+    branch: "master"
+    expected:
+      buildpack: "react"
+      port: 3000
+      health_endpoint: "/"
+      health_status: 200

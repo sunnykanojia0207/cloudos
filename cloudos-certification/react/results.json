@@ -1,0 +1,41 @@
+{
+  "stack": "react",
+  "total": 5,
+  "passed": 0,
+  "failed": 0,
+  "untested": 5,
+  "status": "not-started",
+  "lastUpdated": "2026-07-02",
+  "results": [
+    {
+      "id": "react-vite-default",
+      "name": "Vite React (Default)",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "react-vite-ts",
+      "name": "Vite React TypeScript",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "react-cra",
+      "name": "Create React App",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "react-router",
+      "name": "React Router Example",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "react-mui",
+      "name": "Material UI Example",
+      "status": "untested",
+      "issues": []
+    }
+  ]
+}

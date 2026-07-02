@@ -1,0 +1,41 @@
+{
+  "stack": "python",
+  "total": 5,
+  "passed": 0,
+  "failed": 0,
+  "untested": 5,
+  "status": "not-started",
+  "lastUpdated": "2026-07-02",
+  "results": [
+    {
+      "id": "python-flask",
+      "name": "Flask Application",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "python-fastapi",
+      "name": "FastAPI Application",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "python-django",
+      "name": "Django Application",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "python-quart",
+      "name": "Quart Application",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "python-gunicorn",
+      "name": "Flask with Gunicorn",
+      "status": "untested",
+      "issues": []
+    }
+  ]
+}

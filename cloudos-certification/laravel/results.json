@@ -1,0 +1,41 @@
+{
+  "stack": "laravel",
+  "total": 5,
+  "passed": 0,
+  "failed": 0,
+  "untested": 5,
+  "status": "not-started",
+  "lastUpdated": "2026-07-02",
+  "results": [
+    {
+      "id": "laravel-fresh",
+      "name": "Fresh Laravel Installation",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "laravel-breeze",
+      "name": "Laravel Breeze",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "laravel-api-only",
+      "name": "Laravel API Only",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "laravel-sanctum",
+      "name": "Laravel Sanctum",
+      "status": "untested",
+      "issues": []
+    },
+    {
+      "id": "laravel-jetstream",
+      "name": "Laravel Jetstream",
+      "status": "untested",
+      "issues": []
+    }
+  ]
+}
