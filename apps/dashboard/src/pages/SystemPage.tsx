@@ -73,7 +73,7 @@ export default function SystemPage() {
         <Server className="h-6 w-6 text-primary" />
         <div>
           <h1 className="text-3xl font-bold tracking-tight">System</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-text-secondary">
             Go runtime and operating system information
           </p>
         </div>
@@ -106,10 +106,10 @@ export default function SystemPage() {
               return (
                 <Card key={key}>
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                    <CardTitle className="text-sm font-medium text-text-secondary">
                       {label}
                     </CardTitle>
-                    <Icon className="h-4 w-4 text-muted-foreground" />
+                    <Icon className="h-4 w-4 text-text-secondary" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-xl font-bold">

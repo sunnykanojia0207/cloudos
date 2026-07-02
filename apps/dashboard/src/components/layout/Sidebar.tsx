@@ -13,6 +13,11 @@ import {
   Sun,
   Moon,
   Monitor,
+  FolderKanban,
+  Database,
+  Activity as ActivityIcon,
+  Container,
+  Lightbulb,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/components/theme/ThemeProvider';
@@ -51,9 +56,27 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     items: [
-      { label: 'System', to: '/system', icon: Cpu },
-      { label: 'Settings', to: '/settings', icon: Settings },
+      { label: 'Projects', to: '/projects', icon: FolderKanban },
+    ],
+  },
+  {
+    items: [
+      { label: 'Resources', to: '/resources', icon: Database },
+      { label: 'Controllers', to: '/controllers', icon: Container },
+      { label: 'Providers', to: '/providers', icon: ActivityIcon },
+      { label: 'Capabilities', to: '/capabilities', icon: Lightbulb },
+    ],
+  },
+  {
+    items: [
+      { label: 'Kernel', to: '/kernel', icon: Cpu },
+      { label: 'System', to: '/system', icon: Monitor },
       { label: 'Plugins', to: '/plugins', icon: Puzzle },
+    ],
+  },
+  {
+    items: [
+      { label: 'Settings', to: '/settings', icon: Settings },
     ],
   },
 ];

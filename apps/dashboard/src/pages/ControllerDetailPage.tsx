@@ -45,11 +45,11 @@ const stateIcon = (state: string) => {
     case 'running':
       return <PlayCircle className="h-5 w-5 text-emerald-400" />;
     case 'stopped':
-      return <StopCircle className="h-5 w-5 text-muted-foreground" />;
+      return <StopCircle className="h-5 w-5 text-text-secondary" />;
     case 'failed':
       return <AlertTriangle className="h-5 w-5 text-destructive" />;
     default:
-      return <Activity className="h-5 w-5 text-muted-foreground" />;
+      return <Activity className="h-5 w-5 text-text-secondary" />;
   }
 };
 
@@ -112,7 +112,7 @@ export default function ControllerDetailPage() {
           {stateIcon(ctrl.state)}
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{ctrl.name}</h1>
-            <p className="mt-1 flex items-center gap-2 text-muted-foreground">
+            <p className="mt-1 flex items-center gap-2 text-text-secondary">
               <span>Resource Kind:</span>
               <Badge variant="outline" className="font-mono text-xs">
                 {ctrl.kind}
@@ -126,7 +126,7 @@ export default function ControllerDetailPage() {
       ) : null}
 
       {ctrl?.message && (
-        <p className="text-sm text-muted-foreground">{ctrl.message}</p>
+        <p className="text-sm text-text-secondary">{ctrl.message}</p>
       )}
 
       {/* Health Details */}
@@ -143,7 +143,7 @@ export default function ControllerDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{ctrlHealth.reconcileCount}</div>
-              <p className="text-xs text-muted-foreground">Total reconciliations</p>
+              <p className="text-xs text-text-secondary">Total reconciliations</p>
             </CardContent>
           </Card>
 
@@ -156,7 +156,7 @@ export default function ControllerDetailPage() {
                       'h-4 w-4',
                       ctrlHealth.errorCount > 0
                         ? 'text-destructive'
-                        : 'text-muted-foreground',
+                        : 'text-text-secondary',
                     )}
                   />
                   Error Count
@@ -172,7 +172,7 @@ export default function ControllerDetailPage() {
               >
                 {ctrlHealth.errorCount}
               </div>
-              <p className="text-xs text-muted-foreground">Failed reconciliations</p>
+              <p className="text-xs text-text-secondary">Failed reconciliations</p>
             </CardContent>
           </Card>
 
@@ -189,7 +189,7 @@ export default function ControllerDetailPage() {
               <div className="text-sm font-bold">
                 {formatTime(ctrlHealth.lastReconciled)}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-text-secondary">
                 {ctrlHealth.lastReconciled
                   ? `${Math.round(
                       (Date.now() - new Date(ctrlHealth.lastReconciled).getTime()) /
@@ -215,7 +215,7 @@ export default function ControllerDetailPage() {
                   {ctrlHealth.kind}
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">Watched resource kind</p>
+              <p className="text-xs text-text-secondary">Watched resource kind</p>
             </CardContent>
           </Card>
         </div>
@@ -238,7 +238,7 @@ export default function ControllerDetailPage() {
 
       {!isLoading && !ctrl && !error && (
         <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-secondary">
             Controller "{id}" not found.
           </p>
         </div>

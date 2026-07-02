@@ -24,11 +24,11 @@ const stateIcon = (state: string) => {
     case 'running':
       return <PlayCircle className="h-4 w-4 text-emerald-400" />;
     case 'stopped':
-      return <StopCircle className="h-4 w-4 text-muted-foreground" />;
+      return <StopCircle className="h-4 w-4 text-text-secondary" />;
     case 'failed':
       return <AlertTriangle className="h-4 w-4 text-destructive" />;
     default:
-      return <Activity className="h-4 w-4 text-muted-foreground" />;
+      return <Activity className="h-4 w-4 text-text-secondary" />;
   }
 };
 
@@ -57,7 +57,7 @@ export default function ControllersPage() {
         <Activity className="h-6 w-6 text-primary" />
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Controllers</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-text-secondary">
             {data
               ? `${data.total} controller${data.total !== 1 ? 's' : ''} registered`
               : 'CloudOS controller runtime'}
@@ -108,7 +108,7 @@ export default function ControllersPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 text-sm text-text-secondary">
                     <span className="font-mono text-xs">Kind:</span>
                     <Badge variant="outline" className="font-mono text-xs">
                       {ctrl.kind}
@@ -116,7 +116,7 @@ export default function ControllersPage() {
                   </div>
 
                   {ctrl.health && (
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-4 text-xs text-text-secondary">
                       <span>
                         Reconciliations: {ctrl.health.reconcileCount}
                       </span>
@@ -129,7 +129,7 @@ export default function ControllersPage() {
                   )}
 
                   {ctrl.message && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-text-secondary">
                       {ctrl.message}
                     </p>
                   )}
@@ -140,7 +140,7 @@ export default function ControllersPage() {
 
       {!isLoading && controllers.length === 0 && !error && (
         <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-secondary">
             No controllers registered.
           </p>
         </div>

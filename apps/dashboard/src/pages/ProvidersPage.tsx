@@ -32,7 +32,7 @@ export default function ProvidersPage() {
         <ShieldCheck className="h-6 w-6 text-primary" />
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Providers</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-text-secondary">
             {data
               ? `${data.metadata.total} provider implementations registered`
               : 'CloudOS provider implementations'}
@@ -90,7 +90,7 @@ export default function ProvidersPage() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-4 text-sm text-text-secondary">
                       <div className="flex items-center gap-1.5">
                         {status?.ready ? (
                           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
@@ -111,7 +111,7 @@ export default function ProvidersPage() {
                     {/* Capabilities */}
                     {capabilities.length > 0 && (
                       <div>
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-text-secondary">
                           Capabilities ({capabilities.length})
                         </span>
                         <div className="mt-1 flex flex-wrap gap-1.5">
@@ -127,7 +127,7 @@ export default function ProvidersPage() {
                     {/* Platforms */}
                     {spec?.supportedPlatforms &&
                       spec.supportedPlatforms.length > 0 && (
-                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
                           {spec.supportedPlatforms.map((p) => (
                             <span
                               key={`${p.os}/${p.arch}`}
@@ -147,7 +147,7 @@ export default function ProvidersPage() {
 
       {!isLoading && items.length === 0 && !error && (
         <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-secondary">
             No providers registered.
           </p>
         </div>

@@ -13,7 +13,7 @@ export default function PluginsPage() {
         <Puzzle className="h-6 w-6 text-primary" />
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Plugins</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-text-secondary">
             CloudOS plugin ecosystem
           </p>
         </div>
@@ -21,12 +21,12 @@ export default function PluginsPage() {
 
       <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed">
         <div className="text-center">
-          <Puzzle className="mx-auto h-12 w-12 text-muted-foreground/50" />
+          <Puzzle className="mx-auto h-12 w-12 text-text-secondary/50" />
           <h3 className="mt-4 text-lg font-semibold">Plugin Discovery</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-sm text-text-secondary">
             The Plugin Discovery API is coming in Sprint 1.
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-text-secondary">
             Once implemented, this page will display installed and available
             plugins.
           </p>

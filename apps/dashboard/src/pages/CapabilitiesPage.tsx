@@ -59,11 +59,11 @@ function CapabilityCard({
               ) : (
                 <XCircle className="h-3.5 w-3.5 text-amber-400" />
               )}
-              <span className="capitalize text-muted-foreground">
+              <span className="capitalize text-text-secondary">
                 {status?.status ?? 'unknown'}
               </span>
             </div>
-            <span className="text-muted-foreground">
+            <span className="text-text-secondary">
               Providers: {status?.providerCount ?? 0}
             </span>
           </div>
@@ -86,7 +86,7 @@ function CapabilityCard({
 
           {/* Operations preview */}
           <div>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-text-secondary">
               Operations ({ops.length})
             </span>
             <div className="mt-1 flex flex-wrap gap-1">
@@ -99,14 +99,14 @@ function CapabilityCard({
                 </code>
               ))}
               {ops.length > 4 && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-text-secondary">
                   +{ops.length - 4} more
                 </span>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 text-xs text-text-secondary">
             <span>View details</span>
             <ArrowRight className="h-3 w-3" />
           </div>
@@ -127,7 +127,7 @@ export default function CapabilitiesPage() {
         <Boxes className="h-6 w-6 text-primary" />
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Capabilities</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-text-secondary">
             {data
               ? `${data.metadata.total} capability interfaces registered in the kernel`
               : 'CloudOS capability interfaces'}
@@ -179,7 +179,7 @@ export default function CapabilitiesPage() {
 
       {!isLoading && items.length === 0 && !error && (
         <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-secondary">
             No capabilities registered.
           </p>
         </div>

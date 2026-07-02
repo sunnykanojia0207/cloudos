@@ -40,7 +40,7 @@ export default function CapabilityDetailPage() {
             <h1 className="text-3xl font-bold tracking-tight">
               {data?.spec?.displayName ?? id}
             </h1>
-            <p className="mt-1 text-muted-foreground">
+            <p className="mt-1 text-text-secondary">
               Capability: {data?.metadata?.id ?? id}
             </p>
           </div>
@@ -67,7 +67,7 @@ export default function CapabilityDetailPage() {
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">
+                <CardTitle className="text-sm text-text-secondary">
                   Status
                 </CardTitle>
               </CardHeader>
@@ -83,7 +83,7 @@ export default function CapabilityDetailPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">
+                <CardTitle className="text-sm text-text-secondary">
                   Available
                 </CardTitle>
               </CardHeader>
@@ -103,7 +103,7 @@ export default function CapabilityDetailPage() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm text-muted-foreground">
+                <CardTitle className="text-sm text-text-secondary">
                   Providers
                 </CardTitle>
               </CardHeader>
@@ -120,7 +120,7 @@ export default function CapabilityDetailPage() {
               <CardTitle>Description</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground">
+              <p className="text-text-secondary">
                 {data.spec?.description || 'No description available.'}
               </p>
             </CardContent>
@@ -146,11 +146,11 @@ export default function CapabilityDetailPage() {
                         <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">
                           {op.name}
                         </code>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
+                        <p className="mt-0.5 text-xs text-text-secondary">
                           {op.description || ''}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs text-text-secondary">
                         {op.httpMethod && (
                           <Badge variant="outline" className="font-mono">
                             {op.httpMethod}

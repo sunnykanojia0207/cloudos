@@ -24,7 +24,7 @@ export default function ResourcesPage() {
         <Database className="h-6 w-6 text-primary" />
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Resources</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-text-secondary">
             {data
               ? `${data.total} resource kinds registered in the engine`
               : 'CloudOS Resource Engine'}
@@ -72,7 +72,7 @@ export default function ResourcesPage() {
                     )}
                   </CardHeader>
                   <CardContent>
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-1 text-sm text-text-secondary">
                       <span>View resources</span>
                       <ArrowRight className="h-3 w-3" />
                     </div>
@@ -84,7 +84,7 @@ export default function ResourcesPage() {
 
       {!isLoading && kinds.length === 0 && !error && (
         <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-secondary">
             No resource kinds registered.
           </p>
         </div>

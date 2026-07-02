@@ -16,7 +16,7 @@ export default function KernelPage() {
         <Cpu className="h-6 w-6 text-primary" />
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Kernel</h1>
-          <p className="mt-1 text-muted-foreground">
+          <p className="mt-1 text-text-secondary">
             CloudOS kernel runtime state
           </p>
         </div>
@@ -50,10 +50,10 @@ export default function KernelPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardTitle className="text-sm font-medium text-text-secondary">
                   State
                 </CardTitle>
-                <Activity className="h-4 w-4 text-muted-foreground" />
+                <Activity className="h-4 w-4 text-text-secondary" />
               </CardHeader>
               <CardContent>
                 <Badge
@@ -69,10 +69,10 @@ export default function KernelPage() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardTitle className="text-sm font-medium text-text-secondary">
                   Uptime
                 </CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
+                <Clock className="h-4 w-4 text-text-secondary" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">{data.uptime}</div>
@@ -81,10 +81,10 @@ export default function KernelPage() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
+                <CardTitle className="text-sm font-medium text-text-secondary">
                   Started At
                 </CardTitle>
-                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                <CalendarDays className="h-4 w-4 text-text-secondary" />
               </CardHeader>
               <CardContent>
                 <div className="text-sm">
@@ -116,7 +116,7 @@ export default function KernelPage() {
         </>
       ) : (
         <div className="flex min-h-[200px] items-center justify-center rounded-lg border border-dashed">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-text-secondary">
             No kernel data available.
           </p>
         </div>
