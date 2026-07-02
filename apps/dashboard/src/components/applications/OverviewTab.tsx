@@ -1,5 +1,6 @@
 import * as React from 'react';
 import type { AppResource } from '@/hooks/useApplications';
+import { DeployProgress } from '@/components/applications/DeployProgress';
 import { cn, truncate, relativeTime } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -123,7 +124,11 @@ export function OverviewTab({ app }: OverviewTabProps) {
   const env = app.spec?.settings?.environment ?? report?.environment;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+    <div className="space-y-5">
+      {/* Live deployment progress / status — shown for active deployments */}
+      <DeployProgress app={app} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       {/* ──── LEFT COLUMN ──── */}
 
       {/* Deployment Report */}
@@ -350,6 +355,7 @@ export function OverviewTab({ app }: OverviewTabProps) {
           </CardContent>
         </Card>
       </div>
+    </div>
     </div>
   );
 }

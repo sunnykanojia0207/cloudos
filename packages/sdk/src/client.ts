@@ -23,6 +23,8 @@ import type {
   ControllerHealthDTO,
   ProjectDTO,
   ProjectListResponse,
+  ApplicationDTO,
+  CreateApplicationRequest,
 } from './types';
 
 export class CloudOSClient {
@@ -184,6 +186,22 @@ export class CloudOSClient {
   deleteProject(id: string): Promise<void> {
     return this.request<void>(`/api/v1/projects/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    });
+  }
+
+  // ── Applications ──────────────────────────────────────────────────────────
+
+  createApplication(data: CreateApplicationRequest): Promise<ApplicationDTO> {
+    return this.request<ApplicationDTO>('/api/v1/applications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  }
+
+  triggerDeploy(id: string): Promise<ApplicationDTO> {
+    return this.request<ApplicationDTO>(`/api/v1/applications/${encodeURIComponent(id)}/deploy`, {
+      method: 'POST',
     });
   }
 }

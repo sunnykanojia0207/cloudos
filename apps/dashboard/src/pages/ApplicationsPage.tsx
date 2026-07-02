@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useApplications } from '@/hooks/useApplications';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import { DeployDialog } from '@/components/applications/DeployDialog';
 import { ApplicationCard } from '@/components/applications/ApplicationCard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -103,7 +103,7 @@ function ApplicationSkeletonGrid() {
 /* ── Main Page ──────────────────────────────────────────── */
 export default function ApplicationsPage() {
   usePageTitle('Applications');
-  const navigate = useNavigate();
+  const [deployOpen, setDeployOpen] = useState(false);
   const {
     data: applications,
     isLoading,
@@ -202,15 +202,16 @@ export default function ApplicationsPage() {
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          size="default"
-          onClick={() => navigate('/applications/deploy')}
-          className="gap-1.5 shrink-0"
-        >
-          <Rocket className="h-4 w-4" />
-          Deploy Application
-        </Button>
+        <DeployDialog open={deployOpen} onOpenChange={setDeployOpen}>
+          <Button
+            variant="primary"
+            size="default"
+            className="gap-1.5 shrink-0"
+          >
+            <Rocket className="h-4 w-4" />
+            Deploy Application
+          </Button>
+        </DeployDialog>
       </div>
 
       {/* ══════════════ SEARCH + FILTERS BAR ══════════════ */}
@@ -318,7 +319,7 @@ export default function ApplicationsPage() {
             {
               label: 'Deploy Application',
               icon: Rocket,
-              onClick: () => navigate('/applications/deploy'),
+              onClick: () => setDeployOpen(true),
               variant: 'primary',
             },
             {

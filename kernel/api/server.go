@@ -50,9 +50,10 @@ func NewServer(k *kernel.Kernel, addr string) *Server {
 	wfHandler := NewWorkflowHandler(k.ResourceRegistry())
 	logHandler := NewLogHandler(k.ResourceRegistry(), k.RuntimeManager())
 	deployHandler := NewDeploymentHandler(k.ResourceRegistry())
+	appHandler := NewAppHandler(k)
 
 	mux := http.NewServeMux()
-	registerRoutes(mux, handler, capHandler, provHandler, resHandler, ctrlHandler, projHandler, wfHandler, logHandler, deployHandler)
+	registerRoutes(mux, handler, capHandler, provHandler, resHandler, ctrlHandler, projHandler, wfHandler, logHandler, deployHandler, appHandler)
 
 	// Serve the dashboard SPA for all non-API routes.
 	dashHandler := NewDashboardHandler()
@@ -77,7 +78,7 @@ func NewServer(k *kernel.Kernel, addr string) *Server {
 }
 
 // registerRoutes maps URL paths to handler methods.
-func registerRoutes(mux *http.ServeMux, h *Handler, ch *CapabilityHandler, ph *ProviderHandler, rh *ResourceHandler, ctrlh *ControllerHandler, projh *ProjectHandler, wfh *WorkflowHandler, lh *LogHandler, dh *DeploymentHandler) {
+func registerRoutes(mux *http.ServeMux, h *Handler, ch *CapabilityHandler, ph *ProviderHandler, rh *ResourceHandler, ctrlh *ControllerHandler, projh *ProjectHandler, wfh *WorkflowHandler, lh *LogHandler, dh *DeploymentHandler, ah *AppHandler) {
 	// --- System endpoints ---------------------------------------------------
 	mux.HandleFunc("GET /api/v1/health", h.Health)
 	mux.HandleFunc("GET /api/v1/ready", h.Ready)
@@ -121,6 +122,10 @@ func registerRoutes(mux *http.ServeMux, h *Handler, ch *CapabilityHandler, ph *P
 	mux.HandleFunc("GET /api/v1/applications/{id}/logs", lh.SnapshotLogs)
 	mux.HandleFunc("GET /api/v1/applications/{id}/logs/stream", lh.StreamLogs)
 	mux.HandleFunc("GET /api/v1/applications/{id}/logs/download", lh.DownloadLogs)
+
+	// --- Application lifecycle endpoints --------------------------------
+	mux.HandleFunc("POST /api/v1/applications", ah.CreateApplication)
+	mux.HandleFunc("POST /api/v1/applications/{id}/deploy", ah.TriggerDeploy)
 
 	// --- Deployment Timeline / Comparison endpoints --------------------
 	mux.HandleFunc("GET /api/v1/applications/{id}/deployments/{number}/timeline", dh.Timeline)

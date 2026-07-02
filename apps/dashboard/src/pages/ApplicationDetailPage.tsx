@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useApplication, useApplications } from '@/hooks/useApplications';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useTimeline } from '@/hooks/useDeployments';
+import { useTriggerDeploy } from '@/hooks/useTriggerDeploy';
 import { OverviewTab } from '@/components/applications/OverviewTab';
+import { DeployProgress } from '@/components/applications/DeployProgress';
 import { DeploymentsTab } from '@/components/applications/DeploymentsTab';
 import { TimelineTab } from '@/components/applications/TimelineTab';
 import { LogsTab } from '@/components/applications/LogsTab';
@@ -39,6 +41,7 @@ import {
   History,
   ChevronRight,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { cn, relativeTime, truncate } from '@/lib/utils';
 
@@ -276,7 +279,21 @@ export default function ApplicationDetailPage() {
     isLoading: timelineLoading,
   } = useTimeline(id ?? '');
 
+  const triggerDeploy = useTriggerDeploy();
+  const [deployError, setDeployError] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
+
+  const handleDeploy = useCallback(async () => {
+    if (!id) return;
+    setDeployError('');
+    try {
+      await triggerDeploy.mutateAsync(id);
+      // Switch to overview tab to show live progress
+      setActiveTab('overview');
+    } catch (err) {
+      setDeployError((err as Error)?.message || 'Failed to trigger deployment');
+    }
+  }, [id, triggerDeploy]);
 
   // ── Guard: no ID ──
   if (!id) {
@@ -453,13 +470,36 @@ export default function ApplicationDetailPage() {
                 </a>
               </Button>
             )}
-            <Button variant="primary" size="sm" className="gap-1.5">
-              <Rocket className="h-3.5 w-3.5" />
-              Deploy
+            <Button
+              variant="primary"
+              size="sm"
+              className="gap-1.5"
+              onClick={handleDeploy}
+              disabled={triggerDeploy.isPending}
+            >
+              {triggerDeploy.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Rocket className="h-3.5 w-3.5" />
+              )}
+              {triggerDeploy.isPending ? 'Deploying...' : 'Deploy'}
             </Button>
           </div>
         </div>
       </div>
+
+      {/* Deploy error */}
+      {deployError && (
+        <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-small text-danger" role="alert">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>{deployError}</span>
+        </div>
+      )}
+
+      {/* Live deploy progress for active deployments - shown above tabs */}
+      {(phase === 'Deploying' || phase === 'Creating') && (
+        <DeployProgress app={app} />
+      )}
 
       {/* ════════════════════ MAIN CONTENT ════════════════════ */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">

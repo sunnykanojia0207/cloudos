@@ -280,6 +280,117 @@ export interface ProjectListResponse {
   metadata: ListMeta;
 }
 
+// ── Applications ────────────────────────────────────────────────────────
+
+export interface ApplicationSource {
+  type: string;
+  url: string;
+  branch?: string;
+  path?: string;
+}
+
+export interface ApplicationRuntime {
+  type: string;
+  command?: string;
+  port?: number;
+  args?: string[];
+}
+
+export interface ApplicationBuild {
+  command?: string;
+  outputDir?: string;
+  installCmd?: string;
+}
+
+export interface ApplicationDeployment {
+  port?: number;
+  domain?: string;
+  replicas?: number;
+}
+
+export interface ApplicationSpec {
+  source: ApplicationSource;
+  runtime: ApplicationRuntime;
+  build?: ApplicationBuild;
+  deployment?: ApplicationDeployment;
+  environment?: Record<string, string>;
+  settings?: Record<string, string>;
+}
+
+export interface ApplicationCondition {
+  type: string;
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+}
+
+export interface DeploymentReport {
+  deploymentNumber: number;
+  startedAt: string;
+  completedAt?: string;
+  duration?: string;
+  repository: string;
+  branch: string;
+  commitSha?: string;
+  detectedRuntime?: string;
+  buildpack?: string;
+  buildSuccess: boolean;
+  runtimeName?: string;
+  workflowId: string;
+  workflowSteps: number;
+  healthStatus: string;
+  endpoint?: string;
+  environment?: string;
+  warnings?: string[];
+  errors?: string[];
+}
+
+export interface ApplicationStatus {
+  phase: string;
+  health: string;
+  url?: string;
+  conditions?: ApplicationCondition[];
+  currentDeploymentId?: string;
+  lastDeploymentTime?: string;
+  deploymentCount: number;
+  deploymentHistory?: DeploymentReport[];
+  lastReport?: DeploymentReport;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApplicationDTO {
+  apiVersion: string;
+  kind: string;
+  metadata: ResourceMeta;
+  spec: ApplicationSpec;
+  status?: ApplicationStatus;
+}
+
+// ── Create Application Request ───────────────────────────────────────────
+
+export interface CreateApplicationRequest {
+  id: string;
+  name: string;
+  source: {
+    url: string;
+    branch?: string;
+    path?: string;
+  };
+  runtime: {
+    type: string;
+    command?: string;
+    port?: number;
+  };
+  build?: {
+    command?: string;
+    outputDir?: string;
+    installCmd?: string;
+  };
+  environment?: Record<string, string>;
+}
+
 // ── Activity Items ──────────────────────────────────────────────────────
 
 export interface ActivityItem {
