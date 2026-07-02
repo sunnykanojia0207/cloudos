@@ -588,20 +588,22 @@ type DeploymentStep struct {
 // into a WorkflowDefinition and submit via the Workflow Service.
 //
 // Each step maps to a workflow Node. The plan follows a standard deployment
-// pipeline:
+// pipeline. Note: install and build are NOT separate nodes — they are handled
+// inside the deploy step because the buildpack engine (running on the cloned
+// source) is the authoritative source of install/build/start commands, not
+// the Application spec which may only contain speculative values from the UI.
 //
-//	Validate → Build → Deploy → HealthCheck → Complete
+//	Validate → Clone → Deploy (detect+install+build+start) → HealthCheck → Complete
 func BuildDeploymentPlan(app *Application) []DeploymentStep {
 	runtime := app.Spec_.Runtime.Type
-	isBuildable := app.Spec_.Build != nil && app.Spec_.Build.Command != ""
 	sourceType := app.Spec_.Source.Type
 
 	steps := []DeploymentStep{}
 
 	// Step 1: Validate the application configuration.
 	steps = append(steps, DeploymentStep{
-		ID:   "validate",
-		Name: "Validate Application",
+		ID:     "validate",
+		Name:   "Validate Application",
 		Action: "validate",
 		Target: fmt.Sprintf("Application:%s", app.Metadata_.ID),
 	})
@@ -620,41 +622,30 @@ func BuildDeploymentPlan(app *Application) []DeploymentStep {
 		lastID = "clone"
 	}
 
-	// Step 3: Install dependencies (if build is configured).
-	if isBuildable && app.Spec_.Build.InstallCmd != "" {
-		steps = append(steps, DeploymentStep{
-			ID:        "install",
-			Name:      "Install Dependencies",
-			Action:    "build.install",
-			Target:    app.Spec_.Build.InstallCmd,
-			DependsOn: []string{lastID},
-		})
-		lastID = "install"
-	}
-
-	// Step 4: Build (if configured).
-	if isBuildable {
-		steps = append(steps, DeploymentStep{
-			ID:        "build",
-			Name:      "Build Artifact",
-			Action:    "build.execute",
-			Target:    app.Spec_.Build.Command,
-			DependsOn: []string{lastID},
-		})
-		lastID = "build"
-	}
-
-	// Step 5: Deploy via provider.
+	// Step 3: Deploy via provider.
+	// The provider.deploy action is the authoritative deployment orchestrator.
+	// It uses the buildpack engine against the cloned source to:
+	//   1. Detect the runtime (Go, Node, Python, etc.)
+	//   2. Plan install/build/start commands
+	//   3. Run install dependencies
+	//   4. Build the project (if applicable)
+	//   5. Produce an Artifact
+	//   6. Prepare the runtime (allocate port, env, directory)
+	//   7. Start the application
+	//   8. Return the running instance URL
+	//
+	// Target format: "runtime:{type}:{appID}" — the app ID is embedded so the
+	// executor can route logs and metadata correctly.
 	steps = append(steps, DeploymentStep{
 		ID:        "deploy",
 		Name:      "Deploy Application",
 		Action:    "provider.deploy",
-		Target:    fmt.Sprintf("runtime:%s", runtime),
+		Target:    fmt.Sprintf("runtime:%s:%s", runtime, app.Metadata_.ID),
 		DependsOn: []string{lastID},
 	})
 	lastID = "deploy"
 
-	// Step 6: Health check.
+	// Step 4: Health check.
 	steps = append(steps, DeploymentStep{
 		ID:        "healthcheck",
 		Name:      "Health Check",
@@ -664,7 +655,7 @@ func BuildDeploymentPlan(app *Application) []DeploymentStep {
 	})
 	lastID = "healthcheck"
 
-	// Step 7: Complete — mark deployment as successful.
+	// Step 5: Complete — mark deployment as successful.
 	steps = append(steps, DeploymentStep{
 		ID:        "complete",
 		Name:      "Complete Deployment",

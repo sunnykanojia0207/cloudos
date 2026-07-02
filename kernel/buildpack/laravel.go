@@ -17,6 +17,11 @@ func (bp *LaravelBuildpack) Detect(ctx context.Context, src Source) (bool, error
 
 func (bp *LaravelBuildpack) Plan(ctx context.Context, src Source) (*BuildPlan, error) {
 	installCmd := "composer install"
+	if fileExists(src, "artisan") {
+		// Copy .env.example if .env doesn't exist, then generate APP_KEY.
+		installCmd = "composer install && (if not exist .env copy .env.example .env) && php artisan key:generate"
+	}
+
 	startCmd := "php artisan serve --host=0.0.0.0 --port={port}"
 	outputDir := ""
 
@@ -40,7 +45,8 @@ func (bp *LaravelBuildpack) Plan(ctx context.Context, src Source) (*BuildPlan, e
 		DevPort:       8000,
 		Source:        src,
 		EnvVars: map[string]string{
-			"APP_ENV": "local",
+			"APP_ENV":   "production",
+			"APP_DEBUG": "false",
 		},
 	}, nil
 }

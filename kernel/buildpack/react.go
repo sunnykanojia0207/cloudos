@@ -29,12 +29,17 @@ func (bp *ReactBuildpack) Plan(ctx context.Context, src Source) (*BuildPlan, err
 	pkg, _ := readPackageJSON(src)
 	buildCmd := ""
 	outputDir := "build"
-	if pkg != nil && pkg.Scripts.Build != "" {
-		buildCmd = pkg.Scripts.Build
-	}
-
-	// CRA uses "build", Vite uses "dist"
+	version := ""
 	if pkg != nil {
+		if pkg.Engines.Node != "" {
+			version = "React + Node " + pkg.Engines.Node
+		} else {
+			version = pkg.Version
+		}
+		if pkg.Scripts.Build != "" {
+			buildCmd = pkg.Scripts.Build
+		}
+		// CRA uses "build", Vite uses "dist"
 		if _, hasVite := pkg.DevDependencies["vite"]; hasVite {
 			outputDir = "dist"
 		}
@@ -44,7 +49,7 @@ func (bp *ReactBuildpack) Plan(ctx context.Context, src Source) (*BuildPlan, err
 		BuildpackName: "react",
 		RuntimeType:   RuntimeReact,
 		Name:          "React",
-		Version:       getVersion(pkg),
+		Version:       version,
 		ArtifactType:  ArtifactTypeStatic,
 		InstallCmd:    "npm install",
 		BuildCmd:      buildCmd,
@@ -52,6 +57,9 @@ func (bp *ReactBuildpack) Plan(ctx context.Context, src Source) (*BuildPlan, err
 		OutputDir:     outputDir,
 		DevPort:       3000,
 		Source:        src,
+		EnvVars: map[string]string{
+			"NODE_ENV": "production",
+		},
 	}, nil
 }
 

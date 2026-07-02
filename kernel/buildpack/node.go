@@ -27,11 +27,17 @@ func (bp *NodeBuildpack) Plan(ctx context.Context, src Source) (*BuildPlan, erro
 		startCmd = "npm start"
 	}
 
+	// Detect Node.js runtime version from engines.node in package.json
+	nodeVersion := pkg.Engines.Node
+	if nodeVersion == "" {
+		nodeVersion = pkg.Version // fallback to package version
+	}
+
 	return &BuildPlan{
 		BuildpackName: "node",
 		RuntimeType:   RuntimeNode,
 		Name:          "Node.js",
-		Version:       pkg.Version,
+		Version:       nodeVersion,
 		ArtifactType:  ArtifactTypeSource,
 		InstallCmd:    "npm install",
 		BuildCmd:      buildCmd,
@@ -39,6 +45,9 @@ func (bp *NodeBuildpack) Plan(ctx context.Context, src Source) (*BuildPlan, erro
 		OutputDir:     "",
 		DevPort:       3000,
 		Source:        src,
+		EnvVars: map[string]string{
+			"NODE_ENV": "production",
+		},
 	}, nil
 }
 
@@ -68,5 +77,8 @@ func defaultNodePlan(src Source) *BuildPlan {
 		StartCmd:      "npm start",
 		DevPort:       3000,
 		Source:        src,
+		EnvVars: map[string]string{
+			"NODE_ENV": "production",
+		},
 	}
 }

@@ -251,10 +251,12 @@ func (k *Kernel) Boot(ctx context.Context) error {
 				"kind", projCtrl.Kind(),
 			)
 
-			// Create the Source GitCloner and Local Runtime Manager
+			// Create the Source GitCloner, LogManager, and Local Runtime Manager
 			// for the deployment workflow pipeline.
 			sourceCloner := source.NewGitCloner(k.cfg.Kernel.DataDir)
+			logManager := cr.NewLogManager(1000) // 1000 lines per app
 			runtimeMgr := local.NewManager(k.cfg.Kernel.DataDir, k.log)
+			runtimeMgr.WithLogManager(logManager)
 			k.runtimeManager = runtimeMgr
 			k.log.Info("source cloner and runtime manager created",
 				"workDir", k.cfg.Kernel.DataDir,
@@ -268,6 +270,7 @@ func (k *Kernel) Boot(ctx context.Context) error {
 				EventBus:          k.events,
 				SourceCloner:      sourceCloner,
 				RuntimeManager:    runtimeMgr,
+				LogManager:        logManager,
 				Logger:            k.log,
 			})
 			k.log.Info("workflow service created")

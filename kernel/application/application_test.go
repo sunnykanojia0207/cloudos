@@ -363,7 +363,7 @@ func TestBuildDeploymentPlan_GitSource(t *testing.T) {
 	}
 
 	// Verify plan structure.
-	expectedSteps := []string{"validate", "clone", "install", "build", "deploy", "healthcheck", "complete"}
+	expectedSteps := []string{"validate", "clone", "deploy", "healthcheck", "complete"}
 	if len(plan) != len(expectedSteps) {
 		t.Fatalf("Plan length = %d, want %d", len(plan), len(expectedSteps))
 	}
@@ -475,8 +475,8 @@ func TestBuildDeploymentPlan_TargetValues(t *testing.T) {
 				t.Errorf("clone target = %q, want %q", step.Target, "https://github.com/user/repo.git")
 			}
 		case "deploy":
-			if step.Target != "runtime:node" {
-				t.Errorf("deploy target = %q, want %q", step.Target, "runtime:node")
+			if step.Target != "runtime:node:target-test" {
+				t.Errorf("deploy target = %q, want %q", step.Target, "runtime:node:target-test")
 			}
 		case "complete":
 			if step.Target != "target-test" {

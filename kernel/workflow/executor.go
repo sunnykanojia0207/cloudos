@@ -1,12 +1,15 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudos/cloudos/kernel/buildpack"
 	"github.com/cloudos/cloudos/kernel/controller"
@@ -16,7 +19,6 @@ import (
 	cr "github.com/cloudos/cloudos/kernel/runtime"
 	"github.com/cloudos/cloudos/kernel/source"
 	"github.com/cloudos/cloudos/packages/logging"
-	"github.com/cloudos/cloudos/packages/types"
 )
 
 // ExecutorDeps holds the dependencies the Executor needs to run TaskNodes.
@@ -26,6 +28,7 @@ type ExecutorDeps struct {
 	HealthManager     *health.Manager
 	SourceCloner      *source.GitCloner
 	RuntimeManager    cr.Runtime
+	LogManager        *cr.LogManager
 	Logger            *logging.Logger
 }
 
@@ -58,6 +61,7 @@ type Executor struct {
 	healthMgr      *health.Manager
 	sourceCloner   *source.GitCloner
 	runtimeManager cr.Runtime
+	logManager     *cr.LogManager
 	log            *logging.Logger
 
 	// workDirs maps run IDs to cloned source directories.
@@ -67,6 +71,14 @@ type Executor struct {
 	// instances maps run IDs to running instance IDs.
 	// Set by provider.deploy, read by CleanupRun on cancellation.
 	instances sync.Map
+
+	// appInstances maps app IDs to running instance IDs for graceful stop/redeploy.
+	// Key: appID, Value: instanceID.
+	// When a new deployment starts for an app, any existing instance is stopped first.
+	appInstances sync.Map
+
+	// appIDs maps run IDs to application IDs for log routing.
+	appIDs sync.Map
 
 	// currentCtx is the context for the currently executing node.
 	// Stored by Execute so action handlers can access the run ID.
@@ -78,9 +90,10 @@ func NewExecutor(deps ExecutorDeps) *Executor {
 	return &Executor{
 		resRegistry:    deps.ResourceRegistry,
 		ctrlManager:    deps.ControllerManager,
-		healthMgr:       deps.HealthManager,
+		healthMgr:      deps.HealthManager,
 		sourceCloner:   deps.SourceCloner,
 		runtimeManager: deps.RuntimeManager,
+		logManager:     deps.LogManager,
 		log:            deps.Logger,
 	}
 }
@@ -266,23 +279,44 @@ func (ex *Executor) execControllerReconcile(node *TaskNode) error {
 }
 
 func (ex *Executor) execHealthCheck(node *TaskNode) error {
-	if ex.healthMgr == nil {
-		return fmt.Errorf("health manager not available")
+	// Find the running instance from the deploy step in this workflow run.
+	runID, ok := RunIDFromContext(ex.currentCtx)
+	if !ok {
+		return fmt.Errorf("no workflow run ID in context for health check")
 	}
 
-	report := ex.healthMgr.All()
-	if len(report) == 0 {
-		node.Result = "No health components"
-		return nil
+	val, ok := ex.instances.Load(runID)
+	if !ok {
+		return fmt.Errorf("no running instance found for run %q — deploy step may not have completed", runID)
 	}
 
-	healthyCount := 0
-	for _, h := range report {
-		if h.State == types.StateRunning || h.State == types.StatePending {
-			healthyCount++
-		}
+	instanceID, ok := val.(string)
+	if !ok || instanceID == "" {
+		return fmt.Errorf("invalid instance ID stored for run %q", runID)
 	}
-	node.Result = fmt.Sprintf("Checked %d components (%d healthy)", len(report), healthyCount)
+
+	// Perform the health check against the running instance via the Runtime.
+	report, err := ex.runtimeManager.Health(context.Background(), instanceID)
+	if err != nil {
+		return fmt.Errorf("health check failed for instance %q: %w", instanceID, err)
+	}
+
+	if report.Status == cr.StatusFailed {
+		return fmt.Errorf("health check returned unhealthy: %s — %s", report.Status, report.Message)
+	}
+
+	statusLine := string(report.Status)
+	if report.StatusCode > 0 {
+		statusLine = fmt.Sprintf("%s (HTTP %d)", statusLine, report.StatusCode)
+	}
+	node.Result = fmt.Sprintf("Health check passed: %s (%v)", statusLine, report.ResponseTime)
+
+	ex.log.Info("health check passed",
+		"instance", instanceID,
+		"status", report.Status,
+		"status_code", report.StatusCode,
+		"response_time", report.ResponseTime,
+	)
 	return nil
 }
 
@@ -290,7 +324,8 @@ func (ex *Executor) execHealthCheck(node *TaskNode) error {
 
 // execSourceClone clones a Git repository. The target is the repository URL.
 // It stores the cloned directory path so downstream nodes (build, deploy)
-// can find the source code.
+// can find the source code, and includes the commit SHA in the result for
+// deployment reporting.
 func (ex *Executor) execSourceClone(node *TaskNode) error {
 	if ex.sourceCloner == nil {
 		return fmt.Errorf("source cloner not available")
@@ -309,7 +344,17 @@ func (ex *Executor) execSourceClone(node *TaskNode) error {
 		return fmt.Errorf("clone %q: %w", repoURL, err)
 	}
 
-	node.Result = result.LocalPath
+	// Store the path and commit SHA for downstream consumption.
+	// Format: "path/to/dir|commit=abc1234"
+	commitInfo := ""
+	if result.Commit != "" {
+		short := result.Commit
+		if len(short) > 7 {
+			short = short[:7]
+		}
+		commitInfo = fmt.Sprintf("|commit=%s", short)
+	}
+	node.Result = result.LocalPath + commitInfo
 
 	// Store the work directory for downstream nodes using the run ID
 	// from the execution context.
@@ -395,16 +440,27 @@ func (ex *Executor) execBuildExecute(node *TaskNode) error {
 
 // ── Provider Deploy ───────────────────────────────────────────────────────
 
-// execProviderDeploy deploys the application using the configured Runtime.
-// The target specifies the runtime type (e.g. "runtime:node").
+// execProviderDeploy is the authoritative deployment orchestrator. It:
+//  1. Detects the application runtime via Buildpack Engine
+//  2. Plans install/build/start commands
+//  3. Runs install dependencies with live log streaming
+//  4. Builds the project with live log streaming
+//  5. Produces an Artifact
+//  6. Substitutes {port} in the start command
+//  7. Prepares the Runtime (allocates port, sets env vars)
+//  8. Starts the application
+//  9. Stores the running instance for health checks and lifecycle
 //
-// This is the critical action: it uses the Buildpack Engine to detect the
-// application type, plan the build, run install/build commands, produce an
-// Artifact, and start it via the Runtime interface.
+// NOTE: This is the ONLY place install/build/start commands are executed.
+// The BuildDeploymentPlan no longer produces separate "install" and "build"
+// workflow nodes — the buildpack engine (running on the actual cloned source)
+// is the authoritative source of commands, not the Application spec.
 //
 // Flow:
 //
-//	Source → Buildpack Engine → BuildPlan → install/build → Artifact → Runtime
+//	Source → Buildpack Engine → Detect → Plan → Install → Build → Artifact → Runtime
+//
+// The target format is "runtime:{type}:{appID}" (e.g. "runtime:node:myapp123").
 func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 	if ex.runtimeManager == nil {
 		return fmt.Errorf("runtime manager not available")
@@ -414,6 +470,8 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 	if workDir == "" {
 		return fmt.Errorf("no work directory available for deployment")
 	}
+
+	deployStart := time.Now()
 
 	// ── Detect and plan using the Buildpack Engine ────────────────────
 	bpEngine := buildpack.NewEngine()
@@ -429,6 +487,9 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 		return fmt.Errorf("buildpack planning failed in %q: %w", workDir, err)
 	}
 
+	// Extract app ID from node target ("runtime:{type}:{appID}").
+	appID := extractAppID(node)
+
 	ex.log.Info("buildpack detected",
 		"dir", workDir,
 		"buildpack", bp.Name(),
@@ -436,31 +497,53 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 		"install", plan.InstallCmd,
 		"build", plan.BuildCmd,
 		"start", plan.StartCmd,
+		"version", plan.Version,
+		"app_id", appID,
 	)
+
+	// Store app ID for log routing.
+	if ex.currentCtx != nil {
+		if runID, ok := RunIDFromContext(ex.currentCtx); ok {
+			ex.appIDs.Store(runID, appID)
+		}
+	}
+
+	// ── Graceful stop/redeploy: stop any existing instance for this app ──
+	if existingInstVal, ok := ex.appInstances.Load(appID); ok {
+		if existingInstID, ok := existingInstVal.(string); ok && existingInstID != "" {
+			ex.log.Info("stopping existing instance for redeploy",
+				"app_id", appID,
+				"instance", existingInstID,
+			)
+			if err := ex.runtimeManager.Stop(context.Background(), existingInstID); err != nil {
+				ex.log.Warn("graceful stop of existing instance failed, continuing",
+					"app_id", appID,
+					"instance", existingInstID,
+					"error", err.Error(),
+				)
+			}
+		}
+	}
 
 	// Fix up commands for the platform (e.g., Windows needs .exe extension).
 	ex.fixupPlatformPlan(plan)
 
-	// ── Ensure dependencies are installed ─────────────────────────────
+	// ── Ensure dependencies are installed (with log streaming) ────────
 	if plan.InstallCmd != "" {
 		ex.log.Info("running install command", "dir", workDir, "cmd", plan.InstallCmd)
-		installCmd := exec.Command("cmd", "/c", plan.InstallCmd)
-		installCmd.Dir = workDir
-		if output, err := installCmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("install command %q failed in %q: %s: %w",
-				plan.InstallCmd, workDir, truncateOutput(string(output)), err)
+		if err := ex.execCommandWithLogs(workDir, plan.InstallCmd, appID, "install"); err != nil {
+			return fmt.Errorf("install command %q failed in %q: %w",
+				plan.InstallCmd, workDir, err)
 		}
 		ex.log.Info("install completed", "dir", workDir)
 	}
 
-	// ── Build the project ─────────────────────────────────────────────
+	// ── Build the project (with log streaming) ────────────────────────
 	if plan.BuildCmd != "" {
 		ex.log.Info("running build command", "dir", workDir, "cmd", plan.BuildCmd)
-		buildCmd := exec.Command("cmd", "/c", plan.BuildCmd)
-		buildCmd.Dir = workDir
-		if output, err := buildCmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("build command %q failed in %q: %s: %w",
-				plan.BuildCmd, workDir, truncateOutput(string(output)), err)
+		if err := ex.execCommandWithLogs(workDir, plan.BuildCmd, appID, "build"); err != nil {
+			return fmt.Errorf("build command %q failed in %q: %w",
+				plan.BuildCmd, workDir, err)
 		}
 		ex.log.Info("build completed", "dir", workDir)
 	}
@@ -478,25 +561,30 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 		"path", artifact.Path,
 	)
 
-	// Determine the app ID for process tracking.
-	appID := extractAppID(node)
-
-	// Build the start command. Port 0 means the runtime will auto-allocate.
+	// ── Build the start command with proper port substitution ─────────
 	startCmd := artifact.StartCmd
-	var port int
 	if startCmd == "" {
-		// Static sites: use npx serve with the artifact output directory.
-		startCmd = fmt.Sprintf("npx serve -s %s", artifact.Path)
-		if artifact.Path == "" || artifact.Path == workDir {
-			startCmd = "npx serve -s ."
+		// Static sites: serve the artifact directory.
+		serveDir := artifact.Path
+		if serveDir == "" || serveDir == workDir {
+			serveDir = "."
 		}
+		startCmd = fmt.Sprintf("npx serve -s %s -l {port}", serveDir)
+		artifact.StartCmd = startCmd
+		plan.StartCmd = startCmd
 	}
 
-	// Build environment variables.
+	// Allocate a port and substitute {port} placeholders.
+	port := artifact.DevPort
+	startCmd = buildpack.StartCommandWithPort(startCmd, port)
+
+	// ── Build environment variables ───────────────────────────────────
 	envVars := map[string]string{
 		"HOST":   "0.0.0.0",
+		"PORT":   fmt.Sprintf("%d", port),
 		"APP_ID": appID,
 	}
+	// Merge artifact env vars (from buildpack) on top of defaults.
 	for k, v := range artifact.EnvVars {
 		envVars[k] = v
 	}
@@ -507,13 +595,13 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 		runtimeDir = workDir
 	}
 
-	// Prepare the application (allocates port, validates environment).
+	// ── Prepare the application ───────────────────────────────────────
 	prepared, err := ex.runtimeManager.Prepare(context.Background(), &cr.PrepareRequest{
 		AppID:   appID,
 		Name:    fmt.Sprintf("app-%s", appID),
 		WorkDir: runtimeDir,
 		Command: startCmd,
-		Port:    0, // auto-allocate
+		Port:    port,
 		EnvVars: envVars,
 		Artifact: &cr.ArtifactRef{
 			Type: string(artifact.Type),
@@ -524,7 +612,7 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 		return fmt.Errorf("prepare via runtime: %w", err)
 	}
 
-	// Start the prepared application via the Runtime interface.
+	// ── Start the prepared application ────────────────────────────────
 	inst, err := ex.runtimeManager.Start(context.Background(), prepared)
 	if err != nil {
 		return fmt.Errorf("start via runtime: %w", err)
@@ -532,17 +620,30 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 
 	if inst.Port > 0 {
 		port = inst.Port
+		startCmd = buildpack.StartCommandWithPort(artifact.StartCmd, port)
 	}
 
-	// Register the instance for lifecycle cleanup.
+	// ── Register the instance for lifecycle cleanup ───────────────────
 	if ex.currentCtx != nil {
 		if runID, ok := RunIDFromContext(ex.currentCtx); ok {
 			ex.instances.Store(runID, inst.ID)
 		}
 	}
 
-	// Store deployment info in the node result for downstream steps.
-	node.Result = fmt.Sprintf("Running at %s (pid=%d, port=%d)", inst.URL, inst.PID, port)
+	// Track by app ID for graceful stop/redeploy.
+	ex.appInstances.Store(appID, inst.ID)
+
+	totalDuration := time.Since(deployStart)
+
+	// ── Store rich deployment metadata in node result ─────────────────
+	node.Result = fmt.Sprintf(
+		"Running at %s (pid=%d, port=%d)|buildpack=%s|runtime=%s|version=%s|install=%s|build=%s|start=%s|artifact=%s|artifact_type=%s|duration=%.1fs",
+		inst.URL, inst.PID, port,
+		bp.Name(), plan.RuntimeType, plan.Version,
+		plan.InstallCmd, plan.BuildCmd, startCmd,
+		artifact.Path, artifact.Type,
+		totalDuration.Seconds(),
+	)
 
 	ex.log.Info("application deployed via runtime",
 		"app", appID,
@@ -552,7 +653,86 @@ func (ex *Executor) execProviderDeploy(node *TaskNode) error {
 		"pid", inst.PID,
 		"buildpack", bp.Name(),
 		"artifact_type", artifact.Type,
+		"duration", totalDuration.String(),
 	)
+	return nil
+}
+
+// ── Command Execution with Log Streaming ──────────────────────────────────
+
+// execCommandWithLogs runs a shell command in the given directory, streaming
+// stdout and stderr to the LogManager (if available) for real-time visibility,
+// while also capturing full output for error reporting.
+//
+// The phase parameter identifies the build phase ("install" or "build") for
+// log metadata. The appID routes logs to the correct LogManager store.
+func (ex *Executor) execCommandWithLogs(workDir, command, appID, phase string) error {
+	cmd := exec.Command("cmd", "/c", command)
+	cmd.Dir = workDir
+
+	// Capture stdout and stderr.
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("create stdout pipe: %w", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("create stderr pipe: %w", err)
+	}
+
+	// Start the command.
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start command: %w", err)
+	}
+
+	// Write output to both a capture buffer and the LogManager.
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdoutWriter := io.MultiWriter(&stdoutBuf)
+	stderrWriter := io.MultiWriter(&stderrBuf)
+
+	if ex.logManager != nil && appID != "" {
+		stdoutWriter = io.MultiWriter(&stdoutBuf, &cr.LogLineWriter{
+			Manager: ex.logManager,
+			AppID:   appID,
+			Source:  fmt.Sprintf("stdout-%s", phase),
+		})
+		stderrWriter = io.MultiWriter(&stderrBuf, &cr.LogLineWriter{
+			Manager: ex.logManager,
+			AppID:   appID,
+			Source:  fmt.Sprintf("stderr-%s", phase),
+		})
+	}
+
+	// Copy output in parallel.
+	errCh := make(chan error, 2)
+	go func() {
+		_, err := io.Copy(stdoutWriter, stdout)
+		errCh <- err
+	}()
+	go func() {
+		_, err := io.Copy(stderrWriter, stderr)
+		errCh <- err
+	}()
+
+	// Wait for all copies to complete.
+	for i := 0; i < 2; i++ {
+		if copyErr := <-errCh; copyErr != nil {
+			ex.log.Warn("log copy error during "+phase, "error", copyErr.Error())
+		}
+	}
+
+	// Wait for the command to finish.
+	if err := cmd.Wait(); err != nil {
+		// Include captured output in the error message for diagnostics.
+		outStr := stdoutBuf.String()
+		errStr := stderrBuf.String()
+		combined := outStr
+		if errStr != "" {
+			combined = outStr + "\n" + errStr
+		}
+		return fmt.Errorf("%s command failed: %w\nOutput:\n%s", phase, err, truncateOutput(combined))
+	}
+
 	return nil
 }
 
@@ -577,6 +757,15 @@ func (ex *Executor) CleanupRun(ctx context.Context, runID string) {
 
 	// Clean up work directory reference.
 	ex.workDirs.Delete(runID)
+
+	// Clean up app ID routing.
+	if appID, ok := ex.appIDs.Load(runID); ok {
+		ex.appIDs.Delete(runID)
+		if appIDStr, ok := appID.(string); ok && appIDStr != "" {
+			// Remove from appInstances tracking too.
+			ex.appInstances.Delete(appIDStr)
+		}
+	}
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -623,15 +812,24 @@ func sanitizeAppID(repoURL string) string {
 	return "app"
 }
 
-// extractAppID extracts an application ID from the node context.
+// extractAppID extracts an application ID from the node target or context.
+// The target format is "runtime:{type}:{appID}" for deploy nodes,
+// "Application:{appID}" for validate nodes, or "{appID}" for complete nodes.
 func extractAppID(node *TaskNode) string {
-	// The target might be "Application:<id>" or "runtime:<type>".
-	// In the deployment workflow, the complete step's target is the app ID.
-	// For now, generate from the node ID.
-	id := node.ID()
-	if id != "" {
-		return id
+	// Check multi-part targets: "runtime:node:myapp123"
+	parts := strings.SplitN(node.Target, ":", 3)
+	if len(parts) >= 3 {
+		return parts[2] // runtime:type:appID
 	}
+	if len(parts) == 2 && parts[0] == "Application" {
+		return parts[1] // Application:appID
+	}
+
+	// Fallback: use the last part if it looks like an ID.
+	if node.Target != "" && len(node.Target) < 64 {
+		return node.Target
+	}
+
 	return "unknown"
 }
 

@@ -22,7 +22,7 @@ func (bp *StaticBuildpack) Plan(ctx context.Context, src Source) (*BuildPlan, er
 		ArtifactType:  ArtifactTypeStatic,
 		InstallCmd:    "",
 		BuildCmd:      "",
-		StartCmd:      "",
+		StartCmd:      "npx serve -s . -l {port}",
 		OutputDir:     "",
 		DevPort:       80,
 		Source:        src,

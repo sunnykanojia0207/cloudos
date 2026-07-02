@@ -28,22 +28,40 @@ func (bp *NextJSBuildpack) Detect(ctx context.Context, src Source) (bool, error)
 func (bp *NextJSBuildpack) Plan(ctx context.Context, src Source) (*BuildPlan, error) {
 	pkg, _ := readPackageJSON(src)
 	buildCmd := ""
-	if pkg != nil && pkg.Scripts.Build != "" {
-		buildCmd = pkg.Scripts.Build
+	startCmd := ""
+	version := ""
+	if pkg != nil {
+		if pkg.Engines.Node != "" {
+			version = "Next.js + Node " + pkg.Engines.Node
+		} else {
+			version = pkg.Version
+		}
+		if pkg.Scripts.Build != "" {
+			buildCmd = pkg.Scripts.Build
+		}
+		startCmd = pkg.Scripts.Start
+	}
+	if startCmd == "" {
+		// Next.js uses `next start -p <port>` — it does NOT read PORT env var.
+		startCmd = "npx next start -p {port}"
 	}
 
 	return &BuildPlan{
 		BuildpackName: "nextjs",
 		RuntimeType:   RuntimeNextJS,
 		Name:          "Next.js",
-		Version:       getVersion(pkg),
+		Version:       version,
 		ArtifactType:  ArtifactTypeSource,
 		InstallCmd:    "npm install",
 		BuildCmd:      buildCmd,
-		StartCmd:      "npm start",
+		StartCmd:      startCmd,
 		OutputDir:     ".next",
 		DevPort:       3000,
 		Source:        src,
+		EnvVars: map[string]string{
+			"NODE_ENV":              "production",
+			"NEXT_TELEMETRY_DISABLED": "1",
+		},
 	}, nil
 }
 

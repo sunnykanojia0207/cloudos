@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -319,41 +321,68 @@ func (ac *ApplicationController) handleDeployingPhase(app *Application) controll
 		return controller.RequeueAfter(2 * time.Second)
 
 	case workflow.WorkflowCompleted:
-		// Deployment succeeded — extract URL from the deploy node result.
+		// Deployment succeeded — extract rich metadata from node results.
 		app.Status_.Phase = PhaseRunning
 		app.Status_.Health = HealthHealthy
 		app.Status_.DeploymentCount++
 		app.Status_.LastDeploymentTime = time.Now()
 
-		// Extract the deploy URL from the "deploy" node result.
+		// Parse node results for deployment report metadata.
 		deployURL := ""
-		buildpackName := ""
+		commitSHA := ""
+		var buildpackName, detectedRuntime, artifactType string
+		var artifactSize int64
+
 		for _, nr := range execStatus.NodeResults {
-			if nr.Action == "provider.deploy" && nr.Result != "" {
-				if url := extractDeployURL(nr.Result); url != "" {
-					app.Status_.URL = url
-					deployURL = url
-					ac.log.Info("extracted deploy URL", "id", id, "url", url)
+			switch nr.Action {
+			case "source.clone":
+				if nr.Result != "" {
+					// Format: "path/to/dir|commit=abc1234"
+					if commitPart := extractPipeValue(nr.Result, "commit"); commitPart != "" {
+						commitSHA = commitPart
+					}
 				}
-				break
-			}
-			if nr.Action == "build.execute" && nr.Result != "" {
-				// Buildpack name is embedded in the build result.
-				buildpackName = extractBuildpackName(nr.Result)
+			case "provider.deploy":
+				if nr.Result != "" {
+					// Parse rich deploy result.
+					// Format: "Running at <url> (pid=N, port=N)|key=val|..."
+					if url := extractDeployURL(nr.Result); url != "" {
+						app.Status_.URL = url
+						deployURL = url
+						ac.log.Info("extracted deploy URL", "id", id, "url", url)
+					}
+					buildpackName = extractPipeValue(nr.Result, "buildpack")
+					detectedRuntime = extractPipeValue(nr.Result, "runtime")
+					if v := extractPipeValue(nr.Result, "version"); v != "" && detectedRuntime != "" {
+						detectedRuntime = detectedRuntime + " " + v
+					}
+					artifactType = extractPipeValue(nr.Result, "artifact_type")
+				}
 			}
 		}
 
-		// Build and record the deployment report.
+		// Estimate artifact size from the build output directory.
+		if artifactType != "" && app.Status_.URL != "" {
+			// Use a best-effort stat of the artifact path.
+			if p := extractPipeValueFromResults(execStatus.NodeResults, "artifact"); p != "" {
+				artifactSize = estimateDirSize(p)
+			}
+		}
+
+		// Build and record the deployment report with full metadata.
 		report := &DeploymentReport{
 			DeploymentNumber: app.Status_.DeploymentCount,
 			StartedAt:        parseStartedAt(execStatus.StartedAt),
 			CompletedAt:      time.Now(),
-			Duration:         fmtDuration(time.Now().Sub(parseStartedAt(execStatus.StartedAt))),
+			Duration:         fmtDuration(time.Since(parseStartedAt(execStatus.StartedAt))),
 			Repository:       app.Spec_.Source.URL,
 			Branch:           app.Spec_.Source.Branch,
-			DetectedRuntime:  app.Spec_.Runtime.Type,
+			CommitSHA:        commitSHA,
+			DetectedRuntime:  detectedRuntime,
 			Buildpack:        buildpackName,
 			BuildSuccess:     true,
+			ArtifactType:     artifactType,
+			ArtifactSize:     artifactSize,
 			RuntimeName:      extractRuntimeName(app),
 			RuntimeVersion:   "runtime.cloudos.io/v1",
 			WorkflowID:       deployID,
@@ -543,6 +572,47 @@ func extractDeployURL(result string) string {
 		return rest[:idx]
 	}
 	return rest
+}
+
+// extractPipeValue extracts a key=value pair from a pipe-delimited result string.
+// The format is: "base text|key1=val1|key2=val2"
+func extractPipeValue(result, key string) string {
+	prefix := key + "="
+	parts := strings.Split(result, "|")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(part, prefix) {
+			return strings.TrimPrefix(part, prefix)
+		}
+	}
+	return ""
+}
+
+// extractPipeValueFromResults searches all node results for a pipe-delimited
+// key=value pair and returns the value from the first match.
+func extractPipeValueFromResults(results []workflow.NodeResult, key string) string {
+	for _, nr := range results {
+		if v := extractPipeValue(nr.Result, key); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// estimateDirSize recursively walks a directory and returns the total size
+// in bytes. Returns 0 if the path doesn't exist or can't be walked.
+func estimateDirSize(dirPath string) int64 {
+	var total int64
+	filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // skip errors gracefully
+		}
+		if !info.IsDir() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
 }
 
 // handleRunningPhase maintains an active application's status.

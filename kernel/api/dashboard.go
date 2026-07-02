@@ -37,8 +37,14 @@ func NewDashboardHandler() *DashboardHandler {
 
 	return &DashboardHandler{
 		handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// For SPA routing: if the requested path doesn't have an extension
-			// and isn't an API route, serve index.html.
+			// API routes should never reach the dashboard handler.
+			// If they do (e.g. unmatched API path caught by GET /), return JSON 404.
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				NotFound(w, "NOT_FOUND", "The requested resource was not found")
+				return
+			}
+			// For SPA routing: if the requested path doesn't have an extension,
+			// serve index.html.
 			if !isStaticAsset(r.URL.Path) {
 				r.URL.Path = "/"
 			}

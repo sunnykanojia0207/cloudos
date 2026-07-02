@@ -41,6 +41,7 @@ type ServiceDeps struct {
 	EventBus          interface{}
 	SourceCloner      *source.GitCloner
 	RuntimeManager    cr.Runtime
+	LogManager        *cr.LogManager
 	Logger            *logging.Logger
 }
 
@@ -53,6 +54,7 @@ func NewService(deps ServiceDeps) *Service {
 		EventBus:          deps.EventBus,
 		SourceCloner:      deps.SourceCloner,
 		RuntimeManager:    deps.RuntimeManager,
+		LogManager:        deps.LogManager,
 		Logger:            deps.Logger,
 	})
 

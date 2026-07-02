@@ -3,6 +3,7 @@ package buildpack
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -179,8 +180,19 @@ func TestDetect_Python(t *testing.T) {
 	if r.Type != RuntimePython {
 		t.Errorf("Type = %q, want %q", r.Type, RuntimePython)
 	}
-	if r.InstallCmd != "pip install -r requirements.txt" {
-		t.Errorf("InstallCmd = %q, want %q", r.InstallCmd, "pip install -r requirements.txt")
+
+	// Python buildpack now creates a virtualenv. Expected install command
+	// is platform-dependent: "python -m venv venv && <venv-pip> install -r requirements.txt"
+	if !strings.Contains(r.InstallCmd, "install -r requirements.txt") {
+		t.Errorf("InstallCmd = %q, want it to contain %q", r.InstallCmd, "install -r requirements.txt")
+	}
+	if !strings.Contains(r.InstallCmd, "python -m venv") {
+		t.Errorf("InstallCmd = %q, want it to contain %q", r.InstallCmd, "python -m venv")
+	}
+
+	// Start command should use the venv Python interpreter
+	if !strings.Contains(r.StartCmd, "venv") && !strings.Contains(r.StartCmd, "python") {
+		t.Errorf("StartCmd = %q, want it to use venv Python", r.StartCmd)
 	}
 }
 

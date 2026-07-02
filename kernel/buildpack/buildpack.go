@@ -547,6 +547,10 @@ func StartCommandWithPort(cmd string, port int) string {
 type PackageJSON struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+	Engines struct {
+		Node string `json:"node,omitempty"`
+		NPM  string `json:"npm,omitempty"`
+	} `json:"engines,omitempty"`
 	Scripts struct {
 		Build string `json:"build,omitempty"`
 		Start string `json:"start,omitempty"`

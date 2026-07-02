@@ -54,6 +54,7 @@ type EngineDeps struct {
 	EventBus          interface{} // *events.Bus, passed as interface for nil-safety
 	SourceCloner      *source.GitCloner
 	RuntimeManager    cr.Runtime
+	LogManager        *cr.LogManager
 	Logger            *logging.Logger
 }
 
@@ -65,6 +66,7 @@ func NewEngine(deps EngineDeps) *Engine {
 		HealthManager:     deps.HealthManager,
 		SourceCloner:      deps.SourceCloner,
 		RuntimeManager:    deps.RuntimeManager,
+		LogManager:        deps.LogManager,
 		Logger:            deps.Logger,
 	}
 
