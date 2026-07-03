@@ -197,6 +197,12 @@ type ApplicationDeployment struct {
 
 // ApplicationSpec is the desired state of a CloudOS Application.
 type ApplicationSpec struct {
+	// ProjectID is the ID of the parent Project this Application belongs to.
+	// Empty for standalone Applications (maintained for backward compatibility).
+	// When set, the Application appears in the parent Project's dashboard and
+	// is subject to project-level lifecycle management.
+	ProjectID string `json:"projectId,omitempty"`
+
 	// Source describes where the code comes from.
 	Source ApplicationSource `json:"source"`
 

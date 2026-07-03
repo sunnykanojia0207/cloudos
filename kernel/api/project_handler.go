@@ -2,10 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/cloudos/cloudos/kernel"
+	"github.com/cloudos/cloudos/kernel/application"
 	"github.com/cloudos/cloudos/kernel/project"
 	"github.com/cloudos/cloudos/kernel/resource"
 )
@@ -203,6 +205,7 @@ func (ph *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) 
 // ---------------------------------------------------------------------------
 
 // DeleteProject removes a Project resource.
+// Blocked if the project still has Application resources that reference it.
 func (ph *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -211,6 +214,31 @@ func (ph *ProjectHandler) DeleteProject(w http.ResponseWriter, r *http.Request) 
 	}
 
 	reg := ph.k.ResourceRegistry()
+
+	// Guard: check for Applications belonging to this project.
+	apps, err := reg.List(application.Kind)
+	if err == nil {
+		var appNames []string
+		for _, res := range apps {
+			spec := res.GetSpec()
+			if s, ok := spec.(application.ApplicationSpec); ok && s.ProjectID == id {
+				appNames = append(appNames, res.GetMetadata().Name)
+			} else if s, ok := spec.(map[string]interface{}); ok {
+				if pid, ok := s["projectId"].(string); ok && pid == id {
+					appNames = append(appNames, res.GetMetadata().Name)
+				}
+			}
+		}
+		if len(appNames) > 0 {
+			msg := fmt.Sprintf(
+				"Cannot delete project %q: it has %d application(s) that still reference it. "+
+					"Delete the application(s) first before deleting the project. "+
+					"Applications: %v", id, len(appNames), appNames,
+			)
+			Conflict(w, "PROJECT_HAS_APPLICATIONS", msg)
+			return
+		}
+	}
 
 	// Before deleting, set the project phase to Deleting.
 	existing, err := reg.Get(project.Kind, id)

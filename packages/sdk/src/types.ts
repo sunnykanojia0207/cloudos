@@ -309,6 +309,7 @@ export interface ApplicationDeployment {
 }
 
 export interface ApplicationSpec {
+  projectId?: string;
   source: ApplicationSource;
   runtime: ApplicationRuntime;
   build?: ApplicationBuild;
@@ -373,6 +374,7 @@ export interface ApplicationDTO {
 export interface CreateApplicationRequest {
   id: string;
   name: string;
+  projectId?: string;
   source: {
     url: string;
     branch?: string;

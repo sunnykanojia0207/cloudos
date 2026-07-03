@@ -31,6 +31,13 @@ type createApplicationRequest struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 
+	// ProjectID associates this Application with a parent Project.
+	// When set, the Application appears in the project dashboard and is
+	// subject to project-level lifecycle management (e.g. project delete
+	// is blocked until all Applications are removed).
+	// Optional — standalone Applications are permitted for backward compatibility.
+	ProjectID string `json:"projectId,omitempty"`
+
 	Source struct {
 		URL    string `json:"url"`
 		Branch string `json:"branch,omitempty"`
@@ -85,6 +92,7 @@ func (ah *AppHandler) CreateApplication(w http.ResponseWriter, r *http.Request) 
 
 	// Build the ApplicationSpec from the request.
 	spec := application.ApplicationSpec{
+		ProjectID: req.ProjectID,
 		Source: application.ApplicationSource{
 			Type:   application.SourceGit,
 			URL:    req.Source.URL,
@@ -225,6 +233,9 @@ func genericToApplication(res resource.Resource) *application.Application {
 	}
 
 	if spec, ok := res.GetSpec().(map[string]interface{}); ok {
+		if pid, ok := spec["projectId"].(string); ok {
+			app.Spec_.ProjectID = pid
+		}
 		if source, ok := spec["source"].(map[string]interface{}); ok {
 			if url, ok := source["url"].(string); ok {
 				app.Spec_.Source.URL = url

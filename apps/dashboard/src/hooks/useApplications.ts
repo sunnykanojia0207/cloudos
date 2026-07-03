@@ -16,6 +16,7 @@ export interface AppRuntime {
 }
 
 export interface AppSpec {
+  projectId?: string;
   source: AppSource;
   runtime: AppRuntime;
   deployment?: { port?: number };

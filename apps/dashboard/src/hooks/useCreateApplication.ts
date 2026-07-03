@@ -5,6 +5,7 @@ import type { AppResource } from './useApplications';
 export interface CreateApplicationInput {
   id: string;
   name: string;
+  projectId?: string;
   source: {
     url: string;
     branch?: string;

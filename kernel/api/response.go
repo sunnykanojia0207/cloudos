@@ -83,3 +83,12 @@ func ServiceUnavailable(w http.ResponseWriter, code, message string) {
 		Error:   &ErrorInfo{Code: code, Message: message},
 	})
 }
+
+// Conflict writes a 409 error response. Used for resource conflicts such as
+// deleting a Project that still has Application resources referencing it.
+func Conflict(w http.ResponseWriter, code, message string) {
+	writeJSON(w, http.StatusConflict, Response{
+		Success: false,
+		Error:   &ErrorInfo{Code: code, Message: message},
+	})
+}

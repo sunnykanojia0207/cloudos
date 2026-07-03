@@ -468,6 +468,7 @@ interface DeleteProjectDialogProps {
   projectName: string;
   onConfirm: () => void;
   isDeleting: boolean;
+  error?: string;
 }
 
 function DeleteProjectDialog({
@@ -475,6 +476,7 @@ function DeleteProjectDialog({
   projectName,
   onConfirm,
   isDeleting,
+  error,
 }: DeleteProjectDialogProps) {
   return (
     <Dialog>
@@ -513,6 +515,13 @@ function DeleteProjectDialog({
           <p className="text-xs text-muted-foreground">Project ID</p>
           <p className="font-mono text-xs text-foreground/70">{projectId}</p>
         </div>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-small text-danger" role="alert">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <DialogFooter>
           <DialogClose>
@@ -692,10 +701,15 @@ export default function ProjectDetailPage() {
   // ── Local state ──
   const [activeTab, setActiveTab] = useState('overview');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [deployOpen, setDeployOpen] = useState(false);
 
-  // ── All applications (shown in the project overview) ──
-  const { data: applications = [] } = useApplications();
+  // ── All applications (filtered to this project on the overview) ──
+  const { data: allApplications = [] } = useApplications();
+  const applications = useMemo(
+    () => allApplications.filter((app) => !app.spec.projectId || app.spec.projectId === projectId),
+    [allApplications, projectId],
+  );
   const appCount = applications.length;
 
   // ── Derived ──
@@ -718,10 +732,12 @@ export default function ProjectDetailPage() {
   const handleDelete = useCallback(async () => {
     if (!projectId) return;
     setIsDeleting(true);
+    setDeleteError('');
     try {
       await deleteProject.mutateAsync(projectId);
       navigate('/projects', { replace: true });
-    } catch {
+    } catch (err) {
+      setDeleteError((err as Error)?.message || 'Failed to delete project');
       setIsDeleting(false);
     }
   }, [projectId, deleteProject, navigate]);
@@ -849,7 +865,7 @@ export default function ProjectDetailPage() {
 
             {/* Mobile action buttons */}
             <div className="mt-3 flex items-center gap-2 sm:hidden">
-              <DeployDialog open={deployOpen} onOpenChange={setDeployOpen}>
+              <DeployDialog open={deployOpen} onOpenChange={setDeployOpen} projectId={projectId}>
                 <Button
                   variant="primary"
                   size="sm"
@@ -873,6 +889,7 @@ export default function ProjectDetailPage() {
                 projectName={spec.displayName}
                 onConfirm={handleDelete}
                 isDeleting={isDeleting}
+                error={deleteError}
               />
             </div>
           </div>
@@ -880,7 +897,7 @@ export default function ProjectDetailPage() {
 
         {/* Right: Desktop action buttons */}
         <div className="hidden items-center gap-2 sm:flex">
-          <DeployDialog open={deployOpen} onOpenChange={setDeployOpen}>
+          <DeployDialog open={deployOpen} onOpenChange={setDeployOpen} projectId={projectId}>
             <Button
               variant="primary"
               size="sm"
@@ -904,6 +921,7 @@ export default function ProjectDetailPage() {
             projectName={spec.displayName}
             onConfirm={handleDelete}
             isDeleting={isDeleting}
+            error={deleteError}
           />
         </div>
       </motion.div>
@@ -1132,7 +1150,7 @@ export default function ProjectDetailPage() {
                         {appCount} application{appCount !== 1 ? 's' : ''} deployed
                       </CardDescription>
                     </div>
-                    <DeployDialog open={deployOpen} onOpenChange={setDeployOpen}>
+                    <DeployDialog open={deployOpen} onOpenChange={setDeployOpen} projectId={projectId}>
                       <Button variant="primary" size="sm" className="gap-1.5">
                         <Rocket className="h-3.5 w-3.5" />
                         Deploy
@@ -1157,7 +1175,7 @@ export default function ProjectDetailPage() {
                         <p className="mb-4 max-w-xs text-xs text-muted-foreground">
                           Deploy your first application from a Git repository.
                         </p>
-                        <DeployDialog open={deployOpen} onOpenChange={setDeployOpen}>
+                        <DeployDialog open={deployOpen} onOpenChange={setDeployOpen} projectId={projectId}>
                           <Button variant="primary" size="sm" className="gap-1.5">
                             <Rocket className="h-3.5 w-3.5" />
                             Deploy Application

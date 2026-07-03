@@ -36,6 +36,9 @@ export interface DeployDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   children?: React.ReactNode;
+  /** When set, the new Application is automatically associated with this Project.
+   * This is populated automatically when the dialog is opened from a Project page. */
+  projectId?: string;
 }
 
 /* ── Runtime options ──────────────────────────────────── */
@@ -51,7 +54,7 @@ const RUNTIME_OPTIONS = [
 ];
 
 /* ── Component ─────────────────────────────────────────── */
-export function DeployDialog({ open, onOpenChange, children }: DeployDialogProps) {
+export function DeployDialog({ open, onOpenChange, children, projectId }: DeployDialogProps) {
   const navigate = useNavigate();
   const createApp = useCreateApplication();
 
@@ -117,6 +120,7 @@ export function DeployDialog({ open, onOpenChange, children }: DeployDialogProps
     const payload: CreateApplicationInput = {
       id: appName || generateAppName(repoUrl) || `app-${Date.now()}`,
       name: appName || generateAppName(repoUrl) || `App ${Date.now()}`,
+      ...(projectId ? { projectId } : {}),
       source: {
         url: repoUrl.trim(),
         branch: branch.trim() || 'main',
