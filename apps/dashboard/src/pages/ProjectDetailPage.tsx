@@ -25,6 +25,10 @@ import {
   FileText,
   List,
   Zap,
+  Rocket,
+  Heart,
+  ExternalLink,
+  Terminal,
 } from 'lucide-react';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import {
@@ -57,6 +61,9 @@ import {
   DialogClose,
 } from '@/components/ui/dialog';
 import { cn, relativeTime, formatNumber } from '@/lib/utils';
+import { DeployDialog } from '@/components/applications/DeployDialog';
+import { ApplicationCard } from '@/components/applications/ApplicationCard';
+import { useApplications } from '@/hooks/useApplications';
 import type {
   ProjectPhase,
   ProjectHealth,
@@ -685,6 +692,11 @@ export default function ProjectDetailPage() {
   // ── Local state ──
   const [activeTab, setActiveTab] = useState('overview');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deployOpen, setDeployOpen] = useState(false);
+
+  // ── All applications (shown in the project overview) ──
+  const { data: applications = [] } = useApplications();
+  const appCount = applications.length;
 
   // ── Derived ──
   const allControllers = controllersData?.controllers ?? [];
@@ -837,6 +849,16 @@ export default function ProjectDetailPage() {
 
             {/* Mobile action buttons */}
             <div className="mt-3 flex items-center gap-2 sm:hidden">
+              <DeployDialog open={deployOpen} onOpenChange={setDeployOpen}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="gap-1.5"
+                >
+                  <Rocket className="h-3.5 w-3.5" />
+                  Deploy
+                </Button>
+              </DeployDialog>
               <Button
                 variant="outline"
                 size="sm"
@@ -858,6 +880,16 @@ export default function ProjectDetailPage() {
 
         {/* Right: Desktop action buttons */}
         <div className="hidden items-center gap-2 sm:flex">
+          <DeployDialog open={deployOpen} onOpenChange={setDeployOpen}>
+            <Button
+              variant="primary"
+              size="sm"
+              className="gap-1.5"
+            >
+              <Rocket className="h-3.5 w-3.5" />
+              Deploy Application
+            </Button>
+          </DeployDialog>
           <Button
             variant="outline"
             size="sm"
@@ -1083,13 +1115,67 @@ export default function ProjectDetailPage() {
                 </Card>
               </motion.div>
 
+              {/* ── Applications ───────────────────────────────────── */}
+              <motion.div
+                variants={staggerCardVariants}
+                initial="hidden"
+                animate="visible"
+                custom={5}
+              >
+                <Card className="border-border/50 bg-card/50">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle className="text-sm font-medium">
+                        Applications
+                      </CardTitle>
+                      <CardDescription>
+                        {appCount} application{appCount !== 1 ? 's' : ''} deployed
+                      </CardDescription>
+                    </div>
+                    <DeployDialog open={deployOpen} onOpenChange={setDeployOpen}>
+                      <Button variant="primary" size="sm" className="gap-1.5">
+                        <Rocket className="h-3.5 w-3.5" />
+                        Deploy
+                      </Button>
+                    </DeployDialog>
+                  </CardHeader>
+                  <CardContent>
+                    {applications.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {applications.map((app) => (
+                          <ApplicationCard key={app.metadata.id} app={app} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/40 bg-muted/10 px-6 py-10 text-center">
+                        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-border/30 bg-muted/20">
+                          <Box className="h-5 w-5 text-muted-foreground/50" />
+                        </div>
+                        <h4 className="mb-1 text-sm font-medium text-foreground/70">
+                          No applications yet
+                        </h4>
+                        <p className="mb-4 max-w-xs text-xs text-muted-foreground">
+                          Deploy your first application from a Git repository.
+                        </p>
+                        <DeployDialog open={deployOpen} onOpenChange={setDeployOpen}>
+                          <Button variant="primary" size="sm" className="gap-1.5">
+                            <Rocket className="h-3.5 w-3.5" />
+                            Deploy Application
+                          </Button>
+                        </DeployDialog>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+
               {/* Conditions (if any) */}
               {status?.conditions && status.conditions.length > 0 && (
                 <motion.div
                   variants={staggerCardVariants}
                   initial="hidden"
                   animate="visible"
-                  custom={5}
+                  custom={6}
                 >
                   <Card className="border-border/50 bg-card/50">
                     <CardHeader>
